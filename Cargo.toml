@@ -3,6 +3,8 @@ name = "mft2bodyfile"
 version = "0.1.0"
 authors = ["Jan Starke <Jan.Starke@t-systems.com>"]
 edition = "2018"
+description = "parses an $MFT file to bodyfile (stdout)"
+license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
