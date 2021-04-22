@@ -1,6 +1,12 @@
 # mft2bodyfile
 parses an $MFT file to bodyfile
 
+## Installation
+
+```shell
+cargo install mft2bodyfile
+```
+
 ## Usage
 
 ```shell
