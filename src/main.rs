@@ -262,7 +262,7 @@ impl Bodyfile1Line {
 
         let filename = match filename_attribute.as_ref() {
             Some(fn_attr) => fn_attr.name.clone(),
-            None          => format!("unnamed_{}_{}", entry.header.record_number, entry.header.sequence)
+            None          => format!("unnamed_{}_{} (missing $FILE_NAME in $MFT)", entry.header.record_number, entry.header.sequence)
         };
         let filesize = match filename_attribute.as_ref() {
             Some(fn_attr) => fn_attr.logical_size.to_string(),
@@ -389,10 +389,14 @@ impl Mft2BodyfileApplication {
         let mut parser = MftParser::from_path(&self.mft_file).unwrap();
         
         let pp = PreprocessedMft::new();
-        for mft_entry in parser.iter_entries().filter_map(|e| if let Ok(m)=e {Some(m)} else {panic!("")}) {
-            let reference = MftReference::new(mft_entry.header.record_number, mft_entry.header.sequence);
-            let entry = PreprocessedMftEntry::new(&pp, mft_entry);
-            pp.borrow_mut().insert(reference, entry);
+        for mft_entry in parser.iter_entries().filter_map(Result::ok) {
+            if mft_entry.header.used_entry_size == 0 {
+                log::info!("found entry with zero entry size: {}", mft_entry.header.record_number);
+            } else {
+                let reference = MftReference::new(mft_entry.header.record_number, mft_entry.header.sequence);
+                let entry = PreprocessedMftEntry::new(&pp, mft_entry);
+                pp.borrow_mut().insert(reference, entry);
+            }
         }
         let hundred_percent = pp.borrow().len();
 
