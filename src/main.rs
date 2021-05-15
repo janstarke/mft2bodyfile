@@ -67,7 +67,7 @@ impl PreprocessedMftEntry {
         self.full_path.borrow()
     }
 
-    pub fn format_fn(&self, mft: &PreprocessedMft) -> String {
+    pub fn format_fn(&self, mft: &PreprocessedMft) -> Option<String> {
         match self.bf_line.borrow().as_ref() {
             None => panic!("missing bf_line"),
             Some(bf_line) => bf_line.format_fn(& self.get_full_path(mft))
@@ -231,8 +231,10 @@ impl PreprocessedMft {
         let mut stdout_lock = stdout.lock();
 
         for entry in self.preprocessed_mft.values().filter(|e| e.has_bf_line()) {
-            stdout_lock.write_all(entry.format_fn(self).as_bytes()).unwrap();
             stdout_lock.write_all(entry.format_si(self).as_bytes()).unwrap();
+            if let Some(fn_info) = entry.format_fn(self) {
+                stdout_lock.write_all(fn_info.as_bytes()).unwrap();
+            }
         }
     }
 }
@@ -243,41 +245,53 @@ struct Bodyfile1Line {
     pub parent: Option<MftReference>,
     pub id: MftReference,
     si_information: String,
-    fn_information: String,
+    fn_information: Option<String>,
 }
 
 impl Bodyfile1Line {
     pub fn from(mft: &PreprocessedMft, entry: &mft::MftEntry) -> Option<Self> {
         let mut si_information = String::with_capacity(70);
-        let mut fn_information = String::with_capacity(70);
 
         let mode_uid_gid = "|0|0|0|";
         
         let status = if entry.is_allocated() { "" } else { " (deleted)" };
-        let filename_attribute = match mft.find_filename(entry) {
-            Some(fn_attr) => fn_attr,
-            None     => {
-                log::warn!("didn't find any $FILE_NAME attribute");
-                return None
-            }
+        let filename_attribute = mft.find_filename(entry).or_else(|| {
+            log::warn!("didn't find any $FILE_NAME attribute");
+            None
+        });
+
+        let filename = match filename_attribute.as_ref() {
+            Some(fn_attr) => fn_attr.name.clone(),
+            None          => format!("unnamed_{}_{}", entry.header.record_number, entry.header.sequence)
+        };
+        let filesize = match filename_attribute.as_ref() {
+            Some(fn_attr) => fn_attr.logical_size.to_string(),
+            None          => String::from("0")
         };
 
         si_information.push_str(status);
         si_information.push('|');
         si_information.push_str(&entry.header.record_number.to_string());
         si_information.push_str(mode_uid_gid);
-        si_information.push_str(&filename_attribute.logical_size.to_string());
+        si_information.push_str(&filesize);
         si_information.push('|');
 
-        fn_information.push_str(&si_information);
-        fn_information.push_str(&filename_attribute.accessed.timestamp().to_string());
-        fn_information.push('|');
-        fn_information.push_str(&filename_attribute.mft_modified.timestamp().to_string());
-        fn_information.push('|');
-        fn_information.push_str(&filename_attribute.modified.timestamp().to_string());
-        fn_information.push('|');
-        fn_information.push_str(&filename_attribute.created.timestamp().to_string());
-        fn_information.push('\n');
+        let fn_information = match filename_attribute.as_ref() {
+            None => None,
+            Some(fn_attr) => {
+                let mut fn_information = String::with_capacity(70);
+                fn_information.push_str(&si_information);
+                fn_information.push_str(&fn_attr.accessed.timestamp().to_string());
+                fn_information.push('|');
+                fn_information.push_str(&fn_attr.mft_modified.timestamp().to_string());
+                fn_information.push('|');
+                fn_information.push_str(&fn_attr.modified.timestamp().to_string());
+                fn_information.push('|');
+                fn_information.push_str(&fn_attr.created.timestamp().to_string());
+                fn_information.push('\n');
+                Some(fn_information)
+            }
+        };
 
         let standard_info = mft.find_standard_information(&entry);
         si_information.push_str(&standard_info.accessed.timestamp().to_string());
@@ -287,17 +301,23 @@ impl Bodyfile1Line {
         si_information.push_str(&standard_info.modified.timestamp().to_string());
         si_information.push('|');
         si_information.push_str(&standard_info.created.timestamp().to_string());
-        fn_information.push('\n');
+        si_information.push('\n');
 
-        let parent = if filename_attribute.parent.entry == entry.header.record_number {
-            log::warn!("this entry has no parent");
-            None
-        } else {
-            Some(filename_attribute.parent)
+        let parent = 
+        match filename_attribute.as_ref() {
+            None => None,
+            Some(fn_attr) => {
+                if fn_attr.parent.entry == entry.header.record_number {
+                    log::warn!("this entry has no parent");
+                    None
+                } else {
+                    Some(fn_attr.parent)
+                }
+            }
         };
 
         Some(Bodyfile1Line {
-            name: filename_attribute.name,
+            name: filename,
             parent,
             id: MftReference::new(entry.header.record_number, entry.header.sequence),
             fn_information,
@@ -311,11 +331,12 @@ impl Bodyfile1Line {
             self.si_information
         )
     }
-    pub fn format_fn(&self, full_name: &str) -> String {
-        format!("0|{} ($FILE_NAME){}",
+    pub fn format_fn(&self, full_name: &str) -> Option<String> {
+        self.fn_information.as_ref().and_then(|fn_info| {
+            Some(format!("0|{} ($FILE_NAME){}",
             full_name,
-            self.fn_information
-        )
+            &fn_info ))
+        })
     }
 
     fn find_attribute_list(entry: &mft::MftEntry) -> Option<AttributeListAttr> {
@@ -325,6 +346,7 @@ impl Bodyfile1Line {
                     MftAttributeContent::AttrX20(a) => Some(a),
                     _ => {
                         log::warn!("$MFT entry {} has AttributeList without entries", entry.header.record_number);
+                        log::warn!("{:?}", r.header);
                         None
                     }
                 }
