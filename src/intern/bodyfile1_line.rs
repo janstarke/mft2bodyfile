@@ -13,6 +13,12 @@ pub struct Bodyfile1Line {
   fn_information: Option<String>,
 }
 
+pub enum AttributeListResult {
+    NoAttributeList,
+    NonResidentAttributeList,
+    ResidentAttributeList(AttributeListAttr)
+}
+
 impl Bodyfile1Line {
   pub fn from(mft: &PreprocessedMft, entry: &mft::MftEntry) -> Option<Self> {
       let mut si_information = String::with_capacity(70);
@@ -104,17 +110,18 @@ impl Bodyfile1Line {
       })
   }
 
-  pub fn find_attribute_list(entry: &mft::MftEntry) -> Option<AttributeListAttr> {
-      entry.iter_attributes_matching(Some(vec!(MftAttributeType::AttributeList)))
-           .find_map(Result::ok).and_then(|r| {
-              match r.data {
-                  MftAttributeContent::AttrX20(a) => Some(a),
-                  _ => {
-                      log::warn!("$MFT entry {} has AttributeList without entries", entry.header.record_number);
-                      log::warn!("{:?}", r.header);
-                      None
-                  }
-              }
-          })
+  pub fn find_attribute_list(entry: &mft::MftEntry) -> AttributeListResult {
+      match entry.iter_attributes_matching(Some(vec!(MftAttributeType::AttributeList)))
+           .find_map(Result::ok) {
+               None => AttributeListResult::NoAttributeList,
+               Some(r) => match r.data {
+                MftAttributeContent::AttrX20(a) => AttributeListResult::ResidentAttributeList(a),
+                _ => {
+                    log::warn!("$MFT entry {} has AttributeList without entries", entry.header.record_number);
+                    log::warn!("{:?}", r.header);
+                    AttributeListResult::NonResidentAttributeList
+                }
+            }
+        }
   }
 }

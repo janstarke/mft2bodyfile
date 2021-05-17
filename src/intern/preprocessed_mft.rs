@@ -59,11 +59,13 @@ impl PreprocessedMft {
                                       types: Vec<MftAttributeType>)
                                       -> Vec<MftAttribute> {
       match Bodyfile1Line::find_attribute_list(base_entry) {
-          None => {
-              //log::warn!("no attribute list found");
+        AttributeListResult::NoAttributeList => {
               vec![]
           }
-          Some(a) => {
+          AttributeListResult::NonResidentAttributeList => {
+              vec![]
+          }
+          AttributeListResult::ResidentAttributeList(a) => {
               //log::info!("found attribute list of len {}", a.entries.len());
               let mut attributes: Vec<MftAttribute> = Vec::new();
               for nonbase_entry in a.entries {
