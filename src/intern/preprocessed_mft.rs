@@ -13,46 +13,45 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct PreprocessedMft {
-  preprocessed_mft: HashMap<MftReference, PreprocessedMftEntry>
+  base_entries: HashMap<MftReference, PreprocessedMftEntry>,
+  nonbase_entries: HashMap<MftReference, MftEntry>
 }
 
 impl PreprocessedMft {
   pub fn new() -> Rc<RefCell<Self>> {
       Rc::new(RefCell::new(Self {
-          preprocessed_mft: HashMap::new()
+        base_entries: HashMap::new(),
+        nonbase_entries: HashMap::new()
       }))
   }
 
-  pub fn insert(&mut self, reference: MftReference, entry: PreprocessedMftEntry) {
-      self.preprocessed_mft.insert(reference, entry);
+  pub fn insert_base_entry(&mut self, reference: MftReference, entry: PreprocessedMftEntry) {
+      self.base_entries.insert(reference, entry);
   }
 
-  pub fn is_base_record(entry: &MftEntry) -> bool {
+  pub fn insert_nonbase_entry(&mut self, reference: MftReference, entry: MftEntry) {
+      self.nonbase_entries.insert(reference, entry);
+  }
+
+  pub fn is_base_entry(entry: &MftEntry) -> bool {
       entry.header.base_reference.entry==0 && entry.header.base_reference.sequence==0
   }
 
   pub fn update_bf_lines(&self) {
-      for e in self.preprocessed_mft.values().filter(|e| Self::is_base_record(e.mft_entry())) {
+      for e in self.base_entries.values() {
           e.update_bf_line();
       }
   }
 
   pub fn get_full_path(&self, reference: &MftReference) -> String {
-      match self.preprocessed_mft.get(reference) {
+      match self.base_entries.get(reference) {
           None => panic!("did not find reference in $MFT"),
           Some(entry) => (*entry.get_full_path(self)).clone()
       }
   }
 
-  pub fn get_ppentry<'a> (&'a self, reference: &MftReference) -> Option<&'a PreprocessedMftEntry> {
-      self.preprocessed_mft.get(reference).or_else(|| {
-          log::warn!("unable to resolve $MFT reference: {:?}", reference);
-          None
-      })
-  }
-
-  pub fn get_mft_entry(&self, reference: &MftReference) -> Option<&MftEntry> {
-      self.get_ppentry(reference).and_then(|e| Some(e.mft_entry()))
+  pub fn get_nonbase_mft_entry(&self, reference: &MftReference) -> Option<&MftEntry> {
+      self.nonbase_entries.get(reference)
   }
   
   pub fn nonbase_attributes_matching(&self,
@@ -68,7 +67,7 @@ impl PreprocessedMft {
               //log::info!("found attribute list of len {}", a.entries.len());
               let mut attributes: Vec<MftAttribute> = Vec::new();
               for nonbase_entry in a.entries {
-                  match self.get_mft_entry(&nonbase_entry.segment_reference) {
+                  match self.get_nonbase_mft_entry(&nonbase_entry.segment_reference) {
                       None => continue,
                       Some(mft_entry) => {
                           let attr_iter = mft_entry.iter_attributes_matching(Some(types.clone()));
@@ -130,7 +129,7 @@ impl PreprocessedMft {
                             .iter()
                             .find_map(|e| if e.attribute_type == MftAttributeType::StandardInformation as u32 {Some(e.segment_reference)} else {None}) {
                       Some(e) => {
-                          let attribs = self.preprocessed_mft.get(&e).unwrap().mft_entry().iter_attributes();
+                          let attribs = self.base_entries.get(&e).unwrap().mft_entry().iter_attributes();
                           for a2 in attribs.filter_map(|r| if let Ok(a)=r {Some(a)} else {None}) {
                               if let MftAttributeContent::AttrX10(si) = a2.data {
                                   return si;
@@ -154,14 +153,14 @@ impl PreprocessedMft {
   }
 
   pub fn len(&self) -> usize {
-      self.preprocessed_mft.len()
+      self.base_entries.len()
   }
 
   pub fn print_entries(&self) {
       let stdout = std::io::stdout();
       let mut stdout_lock = stdout.lock();
 
-      for entry in self.preprocessed_mft.values().filter(|e| e.has_bf_line()) {
+      for entry in self.base_entries.values().filter(|e| e.has_bf_line()) {
           stdout_lock.write_all(entry.format_si(self).as_bytes()).unwrap();
           if let Some(fn_info) = entry.format_fn(self) {
               stdout_lock.write_all(fn_info.as_bytes()).unwrap();

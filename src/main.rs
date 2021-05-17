@@ -49,8 +49,13 @@ impl Mft2BodyfileApplication {
                 log::info!("found entry with zero entry size: {}", mft_entry.header.record_number);
             } else {
                 let reference = MftReference::new(mft_entry.header.record_number, mft_entry.header.sequence);
-                let entry = PreprocessedMftEntry::new(&pp, mft_entry);
-                pp.borrow_mut().insert(reference, entry);
+
+                if PreprocessedMft::is_base_entry(&mft_entry) {
+                    let entry = PreprocessedMftEntry::new(&pp, mft_entry);
+                    pp.borrow_mut().insert_base_entry(reference, entry);
+                } else {
+                    pp.borrow_mut().insert_nonbase_entry(reference, mft_entry);
+                }
             }
         }
         let hundred_percent = pp.borrow().len();
