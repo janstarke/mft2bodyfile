@@ -3,6 +3,7 @@ mod intern;
 use intern::*;
 
 use mft::MftParser;
+use mft::entry::EntryFlags;
 use std::path::PathBuf;
 use winstructs::ntfs::mft_reference::MftReference;
 use argparse::{ArgumentParser, Store};
@@ -46,7 +47,10 @@ impl Mft2BodyfileApplication {
         let pp = PreprocessedMft::new();
         for mft_entry in parser.iter_entries().filter_map(Result::ok) {
             if mft_entry.header.used_entry_size == 0 {
-                log::info!("found entry with zero entry size: {}", mft_entry.header.record_number);
+                let allocated_flag = mft_entry.header.flags & EntryFlags::ALLOCATED;
+                if ! allocated_flag.is_empty() {
+                    log::info!("found allocated entry with zero entry size: {}", mft_entry.header.record_number);
+                }
             } else {
                 let reference = MftReference::new(mft_entry.header.record_number, mft_entry.header.sequence);
 
