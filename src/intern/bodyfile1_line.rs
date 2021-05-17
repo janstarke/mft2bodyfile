@@ -116,11 +116,7 @@ impl Bodyfile1Line {
                None => AttributeListResult::NoAttributeList,
                Some(r) => match r.data {
                 MftAttributeContent::AttrX20(a) => AttributeListResult::ResidentAttributeList(a),
-                _ => {
-                    log::warn!("$MFT entry {} has AttributeList without entries", entry.header.record_number);
-                    log::warn!("{:?}", r.header);
-                    AttributeListResult::NonResidentAttributeList
-                }
+                _ => AttributeListResult::NonResidentAttributeList
             }
         }
   }
