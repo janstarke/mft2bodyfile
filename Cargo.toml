@@ -1,6 +1,6 @@
 [package]
 name = "mft2bodyfile"
-version = "0.3.0"
+version = "0.3.9999"
 authors = ["Jan Starke <Jan.Starke@t-systems.com>"]
 edition = "2018"
 description = "parses an $MFT file to bodyfile (stdout)"
