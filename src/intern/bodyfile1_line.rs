@@ -79,7 +79,12 @@ impl Bodyfile1Line {
           None => None,
           Some(fn_attr) => {
               if fn_attr.parent.entry == entry.header.record_number {
-                  log::warn!("this entry has no parent");
+                  //
+                  // 5 is defined to be the root directory
+                  //
+                  if fn_attr.parent.entry != 5 {
+                    log::warn!("entry {} has no parent", fn_attr.parent.entry);
+                  }
                   None
               } else {
                   Some(fn_attr.parent)

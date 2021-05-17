@@ -46,12 +46,27 @@ impl Mft2BodyfileApplication {
         
         let pp = PreprocessedMft::new();
         for mft_entry in parser.iter_entries().filter_map(Result::ok) {
+            //
+            // ignore contents of $MFT extension entries
+            //
+            if (12..24).contains(&mft_entry.header.record_number) {
+                continue;
+            } else
+            
+            //
+            // ignore unallocated entries without content
+            //
             if mft_entry.header.used_entry_size == 0 {
                 let allocated_flag = mft_entry.header.flags & EntryFlags::ALLOCATED;
                 if ! allocated_flag.is_empty() {
                     log::info!("found allocated entry with zero entry size: {}", mft_entry.header.record_number);
                 }
-            } else {
+            }
+            
+            //
+            // handle all other entries
+            //
+            else {
                 let reference = MftReference::new(mft_entry.header.record_number, mft_entry.header.sequence);
 
                 if PreprocessedMft::is_base_entry(&mft_entry) {
@@ -62,9 +77,9 @@ impl Mft2BodyfileApplication {
                 }
             }
         }
-        let hundred_percent = pp.borrow().len();
+        //let hundred_percent = pp.borrow().len();
 
-        eprintln!("found {} entries in $MFT", hundred_percent);
+        //eprintln!("found {} entries in $MFT", hundred_percent);
 
         pp.borrow().update_bf_lines();
         pp.borrow().print_entries();

@@ -120,11 +120,16 @@ impl PreprocessedMft {
                 match file_name_attributes.iter().next() {
                     Some(filename) => Some(filename.clone()),
                     None => {
+                        /*
                         log::warn!(
                             "no $FILE_NAME attribute found for $MFT entry {}",
                             entry.header.record_number
                         );
-                        /*
+
+                        log::warn!(
+                            "entry header: {:?}", entry.header
+                        );
+                        
                         log::error!("the following attributes do exist:");
                         for a in entry.iter_attributes() {
                             log::error!("  >>> {:?}", a);
@@ -189,11 +194,11 @@ impl PreprocessedMft {
         }
         panic!("mft is invalid: mft entry has no $STD_INFO entry");
     }
-
+/*
     pub fn len(&self) -> usize {
         self.base_entries.len()
     }
-
+*/
     pub fn print_entries(&self) {
         let stdout = std::io::stdout();
         let mut stdout_lock = stdout.lock();
