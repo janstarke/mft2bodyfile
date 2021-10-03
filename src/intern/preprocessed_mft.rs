@@ -217,13 +217,26 @@ impl CompleteMftEntry {
                 return Some(name);
             }
         }
-        /*
-        log::warn!(
-            "no $FILE_NAME attribute found for $MFT entry {}-{}",
-            self.base_entry().entry,
-            self.base_entry().sequence
-        );
-        */
+        if self.is_allocated {
+            #[cfg(debug_assertions)]
+            panic!(
+                "no $FILE_NAME attribute found for $MFT entry {}-{}",
+                self.base_entry().entry,
+                self.base_entry().sequence);
+            
+            #[cfg(not(debug_assertions))]
+            log::fatal!(
+                "no $FILE_NAME attribute found for $MFT entry {}-{}. This is fatal because this is not a deleted file",
+                self.base_entry().entry,
+                self.base_entry().sequence
+            );
+        } else {
+            log::warn!(
+                "no $FILE_NAME attribute found for $MFT entry {}-{}, but this is a deleted file",
+                self.base_entry().entry,
+                self.base_entry().sequence
+            );
+        }
         return None;
     }
 }
