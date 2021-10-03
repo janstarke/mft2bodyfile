@@ -19,7 +19,7 @@ mactime -b mft.bodyfile -d >mft.csv
 
 Until now, me and my team used `analyze_mft.py` to extract data from the `$MFT`, when we got triage data from a customer. Unfortunately, `analyze_mft.py` has some disadvantages:
 * python2 is required
-* either the `$STANDARD_INFORMATION` or the `$FILE_NAME` attribute used to generate the timestamps, bot not both of them at the same time. This alrways required us to merge both outputs, which is a little bit messy
+* either the `$STANDARD_INFORMATION` or the `$FILE_NAME` attribute used to generate the timestamps, bot not both of them at the same time. This always required us to merge both outputs, which is a little bit messy
 * from time to time we had problems parsing the `$MFT`
 
 So, at first we started to work on `analyze_mft.py` to fix our complaints, but we soon got stuck when we discovered one additional disadvantage:

@@ -1,209 +1,291 @@
-use crate::intern::*;
-
 use anyhow::Result;
+use likely_stable::unlikely;
 use mft::attribute::x10::StandardInfoAttr;
 use mft::attribute::x30::{FileNameAttr, FileNamespace};
-use mft::attribute::{MftAttribute, MftAttributeContent, MftAttributeType};
+use mft::attribute::{MftAttributeContent, MftAttributeType};
 use mft::MftEntry;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
-use std::rc::Rc;
 use winstructs::ntfs::mft_reference::MftReference;
 
+struct CompleteMftEntry {
+    base_entry: MftReference,
+    file_name_attributes: Vec<FileNameAttr>,
+    standard_info_attribute: Option<StandardInfoAttr>,
+    full_path: RefCell<String>,
+    is_allocated: bool,
+}
+
+impl CompleteMftEntry {
+    pub fn from_base_entry(entry_reference: MftReference, entry: MftEntry) -> Self {
+        let mut c = Self {
+            base_entry: entry_reference,
+            file_name_attributes: Vec::new(),
+            standard_info_attribute: None,
+            full_path: RefCell::new(String::new()),
+            is_allocated: entry.is_allocated(),
+        };
+        c.update_attributes(&entry);
+
+        return c;
+    }
+
+    pub fn from_nonbase_entry(_entry_ref: MftReference, entry: MftEntry) -> Self {
+        let mut c = Self {
+            base_entry: entry.header.base_reference,
+            file_name_attributes: Vec::new(),
+            standard_info_attribute: None,
+            full_path: RefCell::new(String::new()),
+            is_allocated: false,
+        };
+        c.add_nonbase_entry(entry);
+
+        return c;
+    }
+
+    pub fn base_entry(&self) -> &MftReference {
+        &self.base_entry
+    }
+
+    pub fn set_base_entry(&mut self, entry_ref: MftReference, entry: MftEntry) {
+        assert_eq!(self.base_entry, entry_ref);
+        self.update_attributes(&entry);
+        self.is_allocated = entry.is_allocated();
+    }
+
+    fn add_nonbase_entry(&mut self, e: MftEntry) {
+        self.update_attributes(&e);
+    }
+
+    fn update_attributes(&mut self, entry: &MftEntry) {
+        let my_attribute_types = vec![
+            MftAttributeType::FileName,
+            MftAttributeType::StandardInformation,
+        ];
+        for attr_result in entry
+            .iter_attributes_matching(Some(my_attribute_types))
+            .filter_map(Result::ok)
+        {
+            match attr_result.data {
+                MftAttributeContent::AttrX10(standard_info_attribute) => {
+                    if self.standard_info_attribute.is_none() {
+                        self.standard_info_attribute = Some(standard_info_attribute);
+                    } else {
+                        panic!("multiple standard information attributes found")
+                    }
+                }
+                MftAttributeContent::AttrX30(file_name_attribute) => {
+                    self.file_name_attributes.push(file_name_attribute)
+                }
+                _ => panic!("filter for iter_attributes_matching() isn't working"),
+            }
+        }
+    }
+
+    pub fn parent(&self) -> Option<MftReference> {
+        match self.file_name_attribute() {
+            None => None,
+            Some(fn_attr) => Some(fn_attr.parent),
+        }
+    }
+
+    pub fn get_full_path(&self, mft: &PreprocessedMft) -> String {
+        if unlikely(self.full_path.borrow().is_empty()) {
+            if self.base_entry.entry == 5
+            /* matchs the root entry */
+            {
+                *self.full_path.borrow_mut() = String::from("");
+                return self.full_path.borrow().clone();
+            }
+
+            match self.file_name_attribute() {
+                Some(name) => {
+                    match self.parent() {
+                        None => *self.full_path.borrow_mut() = name.name.to_string(),
+                        Some(p) => {
+                            // prevent endless recursion, mainly for $MFT entry 5 (which is the root directory)
+                            assert_ne!(p, self.base_entry);
+
+                            let parent_path = mft.get_full_path(&p);
+                            let mut fp = self.full_path.borrow_mut();
+                            *fp = parent_path;
+                            fp.push('/');
+                            fp.push_str(&name.name);
+                        }
+                    }
+                }
+                None => {
+                    *self.full_path.borrow_mut() = format!(
+                        "unnamed_{}_{}",
+                        self.base_entry.entry, self.base_entry.sequence
+                    );
+                }
+            }
+        }
+        self.full_path.borrow().to_string()
+    }
+
+    pub fn filesize(&self) -> u64 {
+        let filename_attribute = self.file_name_attribute();
+        match filename_attribute.as_ref() {
+            Some(fn_attr) => fn_attr.logical_size,
+            None => 0,
+        }
+    }
+
+    fn format(
+        &self,
+        display_name: &str,
+        atime: i64,
+        mtime: i64,
+        ctime: i64,
+        crtime: i64,
+    ) -> String {
+        let mode = String::from("0");
+        let uid = String::from("0");
+        let gid = String::from("0");
+        let status = if self.is_allocated { "" } else { " (deleted)" };
+        let filesize = self.filesize();
+        format!(
+            "0|{}{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n",
+            display_name,
+            status,
+            &self.base_entry().entry.to_string(),
+            mode,
+            uid,
+            gid,
+            filesize,
+            atime,
+            mtime,
+            ctime,
+            crtime
+        )
+    }
+
+    pub fn format_fn(&self, mft: &PreprocessedMft) -> Option<String> {
+        let filename_attribute = self.file_name_attribute();
+        match filename_attribute.as_ref() {
+            Some(fn_attr) => {
+                let display_name = format!("{} ($FILENAME)", self.get_full_path(mft));
+                Some(self.format(
+                    &display_name,
+                    fn_attr.accessed.timestamp(),
+                    fn_attr.mft_modified.timestamp(),
+                    fn_attr.modified.timestamp(),
+                    fn_attr.created.timestamp(),
+                ))
+            }
+            None => {
+                /*
+                log::warn!(
+                    "unnamed_{}_{} (missing $FILE_NAME in $MFT)",
+                    self.base_entry().entry,
+                    self.base_entry().sequence
+                );
+                */
+                None
+            }
+        }
+    }
+    pub fn format_si(&self, mft: &PreprocessedMft) -> String {
+        match self.standard_info_attribute {
+            Some(ref standard_info_attribute) => self.format(
+                &self.get_full_path(mft),
+                standard_info_attribute.accessed.timestamp(),
+                standard_info_attribute.mft_modified.timestamp(),
+                standard_info_attribute.modified.timestamp(),
+                standard_info_attribute.created.timestamp(),
+            ),
+            None => panic!("missing standard information"),
+        }
+    }
+
+    pub fn file_name_attribute(&self) -> Option<&FileNameAttr> {
+        let namespace_prio = vec![
+            FileNamespace::Win32,
+            FileNamespace::Win32AndDos,
+            FileNamespace::POSIX,
+            FileNamespace::DOS,
+        ];
+        for namespace in namespace_prio.iter() {
+            if let Some(name) = self
+                .file_name_attributes
+                .iter()
+                .find(|a| &a.namespace == namespace)
+            {
+                return Some(name);
+            }
+        }
+        /*
+        log::warn!(
+            "no $FILE_NAME attribute found for $MFT entry {}-{}",
+            self.base_entry().entry,
+            self.base_entry().sequence
+        );
+        */
+        return None;
+    }
+}
+
 pub struct PreprocessedMft {
-    base_entries: HashMap<MftReference, PreprocessedMftEntry>,
-    nonbase_entries: HashMap<MftReference, MftEntry>,
+    complete_entries: HashMap<MftReference, CompleteMftEntry>,
 }
 
 impl PreprocessedMft {
-    pub fn new() -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self {
-            base_entries: HashMap::new(),
-            nonbase_entries: HashMap::new(),
-        }))
+    pub fn new() -> Self {
+        Self {
+            complete_entries: HashMap::new(),
+        }
     }
+    pub fn add_entry(&mut self, entry: MftEntry) {
+        let reference = MftReference::new(entry.header.record_number, entry.header.sequence);
 
-    pub fn insert_base_entry(&mut self, reference: MftReference, entry: PreprocessedMftEntry) {
-        self.base_entries.insert(reference, entry);
-    }
-
-    pub fn insert_nonbase_entry(&mut self, reference: MftReference, entry: MftEntry) {
-        self.nonbase_entries.insert(reference, entry);
+        if PreprocessedMft::is_base_entry(&entry) {
+            match self.complete_entries.get_mut(&reference) {
+                Some(e) => e.set_base_entry(reference, entry),
+                None => {
+                    let ce = CompleteMftEntry::from_base_entry(reference, entry);
+                    let _ = self.complete_entries.insert(reference, ce);
+                }
+            }
+        } else
+        /* if ! PreprocessedMft::is_base_entry(&entry) */
+        {
+            //
+            // ignore unallocated nonbase entries
+            //
+            if entry.is_allocated() {
+                let base_reference = entry.header.base_reference;
+                match self.complete_entries.get_mut(&base_reference) {
+                    Some(e) => {
+                        e.add_nonbase_entry(entry);
+                    }
+                    None => {
+                        let ce = CompleteMftEntry::from_nonbase_entry(reference, entry);
+                        let _ = self.complete_entries.insert(base_reference, ce);
+                    }
+                }
+            }
+        }
     }
 
     pub fn is_base_entry(entry: &MftEntry) -> bool {
         entry.header.base_reference.entry == 0 && entry.header.base_reference.sequence == 0
     }
 
-    pub fn update_bf_lines(&self) {
-        for e in self.base_entries.values() {
-            e.update_bf_line();
-        }
-    }
-
     pub fn get_full_path(&self, reference: &MftReference) -> String {
-        match self.base_entries.get(reference) {
-            None => panic!("did not find reference in $MFT"),
-            Some(entry) => (*entry.get_full_path(self)).clone(),
+        match self.complete_entries.get(&reference) {
+            None => format!("deleted_parent_{}_{}", reference.entry, reference.sequence),
+            Some(entry) => entry.get_full_path(self),
         }
     }
 
-    pub fn get_nonbase_mft_entry(&self, reference: &MftReference) -> Option<&MftEntry> {
-        self.nonbase_entries.get(reference)
-    }
-
-    pub fn nonbase_attributes_matching(
-        &self,
-        base_entry: &MftEntry,
-        types: Vec<MftAttributeType>,
-    ) -> Vec<MftAttribute> {
-        match Bodyfile1Line::find_attribute_list(base_entry) {
-            AttributeListResult::NoAttributeList => {
-                vec![]
-            }
-            AttributeListResult::NonResidentAttributeList => {
-                let mut attributes = vec![];
-                let base_reference =
-                    MftReference::new(base_entry.header.record_number, base_entry.header.sequence);
-                for nonbase_entry in self
-                    .nonbase_entries
-                    .iter()
-                    .filter(|(_, v)| v.header.base_reference == base_reference)
-                    .map(|(_, v)| v)
-                {
-                    let attr_iter = nonbase_entry.iter_attributes_matching(Some(types.clone()));
-                    attributes.extend(attr_iter.filter_map(Result::ok));
-                }
-                attributes
-            }
-            AttributeListResult::ResidentAttributeList(a) => {
-                //log::info!("found attribute list of len {}", a.entries.len());
-                let mut attributes: Vec<MftAttribute> = Vec::new();
-                for nonbase_entry in a.entries {
-                    match self.get_nonbase_mft_entry(&nonbase_entry.segment_reference) {
-                        None => continue,
-                        Some(mft_entry) => {
-                            let attr_iter = mft_entry.iter_attributes_matching(Some(types.clone()));
-                            attributes.extend(attr_iter.filter_map(Result::ok));
-                        }
-                    }
-                }
-                attributes
-            }
-        }
-    }
-
-    pub fn find_filename(&self, entry: &MftEntry) -> Option<FileNameAttr> {
-        let file_name_attributes: Vec<FileNameAttr> = entry
-            .iter_attributes_matching(Some(vec![MftAttributeType::FileName]))
-            .filter_map(Result::ok)
-            .filter_map(|a| a.data.into_file_name())
-            .chain(
-                self.nonbase_attributes_matching(entry, vec![MftAttributeType::FileName])
-                    .into_iter()
-                    .filter_map(|a| a.data.into_file_name()),
-            )
-            .collect();
-
-        //log::info!("validating {} attributes", file_name_attributes.len());
-
-        // Try to find a human-readable filename first
-        let win32_filename = file_name_attributes
-            .iter()
-            .find(|a| [FileNamespace::Win32, FileNamespace::Win32AndDos].contains(&a.namespace));
-
-        match win32_filename {
-            Some(filename) => Some(filename.clone()),
-            None => {
-                // Try to take anything
-                match file_name_attributes.iter().next() {
-                    Some(filename) => Some(filename.clone()),
-                    None => {
-                        /*
-                        log::warn!(
-                            "no $FILE_NAME attribute found for $MFT entry {}",
-                            entry.header.record_number
-                        );
-
-                        log::warn!(
-                            "entry header: {:?}", entry.header
-                        );
-                        
-                        log::error!("the following attributes do exist:");
-                        for a in entry.iter_attributes() {
-                            log::error!("  >>> {:?}", a);
-                        }
-                        */
-                        None
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn find_standard_information(&self, entry: &MftEntry) -> StandardInfoAttr {
-        for a in entry
-            .iter_attributes()
-            .filter_map(|r| if let Ok(a) = r { Some(a) } else { None })
-        {
-            match a.data {
-                MftAttributeContent::AttrX10(si) => {
-                    return si;
-                }
-
-                MftAttributeContent::AttrX20(al) => {
-                    match al.entries.iter().find_map(|e| {
-                        if e.attribute_type == MftAttributeType::StandardInformation as u32 {
-                            Some(e.segment_reference)
-                        } else {
-                            None
-                        }
-                    }) {
-                        Some(e) => {
-                            let attribs = self
-                                .base_entries
-                                .get(&e)
-                                .unwrap()
-                                .mft_entry()
-                                .iter_attributes();
-                            for a2 in
-                                attribs.filter_map(|r| if let Ok(a) = r { Some(a) } else { None })
-                            {
-                                if let MftAttributeContent::AttrX10(si) = a2.data {
-                                    return si;
-                                }
-                            }
-                            panic!("mft is inconsistent: I did not found $STD_INFO where it ought to be");
-                        }
-                        None => {
-                            panic!("mft is invalid: mft entry has no $STD_INFO entry");
-                        }
-                    }
-                }
-                _ => (),
-            }
-        }
-
-        eprintln!("{:?}", entry);
-        for a in entry
-            .iter_attributes()
-            .filter_map(|r| if let Ok(a) = r { Some(a) } else { None })
-        {
-            eprintln!("{:?}", a);
-        }
-        panic!("mft is invalid: mft entry has no $STD_INFO entry");
-    }
-/*
-    pub fn len(&self) -> usize {
-        self.base_entries.len()
-    }
-*/
     pub fn print_entries(&self) {
         let stdout = std::io::stdout();
         let mut stdout_lock = stdout.lock();
 
-        for entry in self.base_entries.values().filter(|e| e.has_bf_line()) {
+        for entry in self.complete_entries.values() {
             stdout_lock
                 .write_all(entry.format_si(self).as_bytes())
                 .unwrap();

@@ -1,4 +1,3 @@
-
 mod intern;
 use intern::*;
 
@@ -9,6 +8,7 @@ use winstructs::ntfs::mft_reference::MftReference;
 use argparse::{ArgumentParser, Store};
 use anyhow::Result;
 use simplelog::{TermLogger, LevelFilter, Config, TerminalMode, ColorChoice};
+use indicatif::{ProgressBar, ProgressStyle};
 
 struct Mft2BodyfileApplication {
     mft_file: PathBuf,
@@ -44,8 +44,25 @@ impl Mft2BodyfileApplication {
         
         let mut parser = MftParser::from_path(&self.mft_file).unwrap();
         
-        let pp = PreprocessedMft::new();
+        let mut pp = PreprocessedMft::new();
+        let bar = ProgressBar::new(parser.get_entry_count()).with_message("parsing $MFT entries");
+        bar.set_style(ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7}({percent}%) {msg}")
+            .progress_chars("##-"));
+        bar.set_draw_delta(1000);
+
         for mft_entry in parser.iter_entries().filter_map(Result::ok) {
+            bar.inc(1);
+
+            //
+            // ignore contents of $MFT metadata entries
+            //
+            /*
+            if mft_entry.header.record_number < 12 {
+                continue;
+            } else
+            */
+
             //
             // ignore contents of $MFT extension entries
             //
@@ -57,8 +74,7 @@ impl Mft2BodyfileApplication {
             // ignore unallocated entries without content
             //
             if mft_entry.header.used_entry_size == 0 {
-                let allocated_flag = mft_entry.header.flags & EntryFlags::ALLOCATED;
-                if ! allocated_flag.is_empty() {
+                if mft_entry.is_allocated() {
                     log::info!("found allocated entry with zero entry size: {}", mft_entry.header.record_number);
                 }
             }
@@ -67,22 +83,17 @@ impl Mft2BodyfileApplication {
             // handle all other entries
             //
             else {
-                let reference = MftReference::new(mft_entry.header.record_number, mft_entry.header.sequence);
-
-                if PreprocessedMft::is_base_entry(&mft_entry) {
-                    let entry = PreprocessedMftEntry::new(&pp, mft_entry);
-                    pp.borrow_mut().insert_base_entry(reference, entry);
-                } else {
-                    pp.borrow_mut().insert_nonbase_entry(reference, mft_entry);
-                }
+                pp.add_entry(mft_entry);
             }
         }
+        bar.finish();
         //let hundred_percent = pp.borrow().len();
 
         //eprintln!("found {} entries in $MFT", hundred_percent);
 
-        pp.borrow().update_bf_lines();
-        pp.borrow().print_entries();
+        //pp.borrow_mut().link_entries();
+        //pp.borrow().update_bf_lines();
+        pp.print_entries();
         Ok(())
     }
 }
