@@ -11,7 +11,7 @@ use winstructs::ntfs::mft_reference::MftReference;
 
 struct CompleteMftEntry {
     base_entry: MftReference,
-    file_name_attributes: Vec<FileNameAttr>,
+    file_name_attribute: Option<FileNameAttr>,
     standard_info_attribute: Option<StandardInfoAttr>,
     full_path: RefCell<String>,
     is_allocated: bool,
@@ -21,7 +21,7 @@ impl CompleteMftEntry {
     pub fn from_base_entry(entry_reference: MftReference, entry: MftEntry) -> Self {
         let mut c = Self {
             base_entry: entry_reference,
-            file_name_attributes: Vec::new(),
+            file_name_attribute: None,
             standard_info_attribute: None,
             full_path: RefCell::new(String::new()),
             is_allocated: entry.is_allocated(),
@@ -34,7 +34,7 @@ impl CompleteMftEntry {
     pub fn from_nonbase_entry(_entry_ref: MftReference, entry: MftEntry) -> Self {
         let mut c = Self {
             base_entry: entry.header.base_reference,
-            file_name_attributes: Vec::new(),
+            file_name_attribute: None,
             standard_info_attribute: None,
             full_path: RefCell::new(String::new()),
             is_allocated: false,
@@ -76,7 +76,23 @@ impl CompleteMftEntry {
                     }
                 }
                 MftAttributeContent::AttrX30(file_name_attribute) => {
-                    self.file_name_attributes.push(file_name_attribute)
+                    match self.file_name_attribute {
+                        None => self.file_name_attribute = Some(file_name_attribute),
+                        Some(ref mut name_attr) => match file_name_attribute.namespace {
+                            FileNamespace::Win32AndDos => *name_attr = file_name_attribute,
+                            FileNamespace::Win32 => {
+                                if name_attr.namespace != FileNamespace::Win32AndDos {
+                                    *name_attr = file_name_attribute
+                                }
+                            }
+                            FileNamespace::POSIX => {
+                                if name_attr.namespace == FileNamespace::DOS {
+                                    *name_attr = file_name_attribute
+                                }
+                            }
+                            FileNamespace::DOS => {}
+                        },
+                    }
                 }
                 _ => panic!("filter for iter_attributes_matching() isn't working"),
             }
@@ -84,9 +100,9 @@ impl CompleteMftEntry {
     }
 
     pub fn parent(&self) -> Option<MftReference> {
-        match self.file_name_attribute() {
+        match self.file_name_attribute {
             None => None,
-            Some(fn_attr) => Some(fn_attr.parent),
+            Some(ref fn_attr) => Some(fn_attr.parent),
         }
     }
 
@@ -127,9 +143,8 @@ impl CompleteMftEntry {
     }
 
     pub fn filesize(&self) -> u64 {
-        let filename_attribute = self.file_name_attribute();
-        match filename_attribute.as_ref() {
-            Some(fn_attr) => fn_attr.logical_size,
+        match self.file_name_attribute {
+            Some(ref fn_attr) => fn_attr.logical_size,
             None => 0,
         }
     }
@@ -164,9 +179,8 @@ impl CompleteMftEntry {
     }
 
     pub fn format_fn(&self, mft: &PreprocessedMft) -> Option<String> {
-        let filename_attribute = self.file_name_attribute();
-        match filename_attribute.as_ref() {
-            Some(fn_attr) => {
+        match self.file_name_attribute {
+            Some(ref fn_attr) => {
                 let display_name = format!("{} ($FILENAME)", self.get_full_path(mft));
                 Some(self.format(
                     &display_name,
@@ -177,13 +191,6 @@ impl CompleteMftEntry {
                 ))
             }
             None => {
-                /*
-                log::warn!(
-                    "unnamed_{}_{} (missing $FILE_NAME in $MFT)",
-                    self.base_entry().entry,
-                    self.base_entry().sequence
-                );
-                */
                 None
             }
         }
@@ -201,43 +208,31 @@ impl CompleteMftEntry {
         }
     }
 
-    pub fn file_name_attribute(&self) -> Option<&FileNameAttr> {
-        let namespace_prio = vec![
-            FileNamespace::Win32,
-            FileNamespace::Win32AndDos,
-            FileNamespace::POSIX,
-            FileNamespace::DOS,
-        ];
-        for namespace in namespace_prio.iter() {
-            if let Some(name) = self
-                .file_name_attributes
-                .iter()
-                .find(|a| &a.namespace == namespace)
-            {
-                return Some(name);
-            }
-        }
-        if self.is_allocated {
-            #[cfg(debug_assertions)]
-            panic!(
-                "no $FILE_NAME attribute found for $MFT entry {}-{}",
-                self.base_entry().entry,
-                self.base_entry().sequence);
-            
-            #[cfg(not(debug_assertions))]
-            log::fatal!(
+    pub fn file_name_attribute(&self) -> &Option<FileNameAttr> {
+        if self.file_name_attribute.is_none() {
+            if self.is_allocated {
+                #[cfg(debug_assertions)]
+                panic!(
+                    "no $FILE_NAME attribute found for $MFT entry {}-{}",
+                    self.base_entry().entry,
+                    self.base_entry().sequence
+                );
+
+                #[cfg(not(debug_assertions))]
+                log::fatal!(
                 "no $FILE_NAME attribute found for $MFT entry {}-{}. This is fatal because this is not a deleted file",
                 self.base_entry().entry,
                 self.base_entry().sequence
             );
-        } else {
-            log::warn!(
+            } else {
+                log::warn!(
                 "no $FILE_NAME attribute found for $MFT entry {}-{}, but this is a deleted file",
                 self.base_entry().entry,
                 self.base_entry().sequence
             );
+            }
         }
-        return None;
+        return &self.file_name_attribute;
     }
 }
 
