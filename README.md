@@ -30,10 +30,8 @@ You might think that "non-base MFT entries do not have the `$FILE_NAME` and `$ST
 # What are the advantages of this tool?
 
 * way more faster than `analyze_mft.py`
-* all files are displayed, even if they don't have a '$FILENAME' (Really??? Files can have no filename? Yes, they can. See below)
+* correct handling of entries with nonbase attributes, even if they are stored in nonpersistent `$ATTRIBUTE_LIST` entries.
 
 # What are the limits of this tool?
 
-Consider the following situation: You have a file, which has a lot of attributes. The list of attributes is so long, that it cannot be stored in an `$MFT` entry. So, the `$ATTRIBUTE_LIST` attribute is stored as a nonresident attribute, outside the `$MFT`. At the moment, `mft2bodyfile` is not able to find the corresponding `$MFT` entries, and will generate a filename.
-
-Can we fix this? Yes, we can. If we detect such a situation, we can search the `$MFT` entries which refer to our base entry, and use those to find a `$FILE_NAME` attribute. 
+Consider the following situation: You have a file, which has a lot of attributes which is so long that not all attributes can be stored in the base entry. Then, one or more additional entries are used. If such a file is deleted and the base entry is reused for another file, we can only see that there once a file has existed (using the nonbase entry), but we cannot see the original filename. In addition, if we cannot see the `$FILENAME` attribute, we also cannot see the `$STANDARD_INFORMATION` attribute, which has a lower attribute id. So, we see traces that some files once existed, but we neither see its name nor any timestamps.
