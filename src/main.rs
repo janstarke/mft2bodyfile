@@ -1,10 +1,7 @@
 mod intern;
 use intern::*;
-
 use mft::MftParser;
-use mft::entry::EntryFlags;
 use std::path::PathBuf;
-use winstructs::ntfs::mft_reference::MftReference;
 use argparse::{ArgumentParser, Store};
 use anyhow::Result;
 use simplelog::{TermLogger, LevelFilter, Config, TerminalMode, ColorChoice};
