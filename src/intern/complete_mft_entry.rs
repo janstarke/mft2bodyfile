@@ -223,14 +223,39 @@ impl CompleteMftEntry {
                 self.base_entry().entry,
                 self.base_entry().sequence
             );
-            } else {
+            } /*else {
                 log::warn!(
                 "no $FILE_NAME attribute found for $MFT entry {}-{}, but this is a deleted file",
                 self.base_entry().entry,
                 self.base_entry().sequence
             );
-            }
+            }*/
         }
         return &self.file_name_attribute;
+    }
+
+    pub fn bodyfile_lines(&self, mft: &PreprocessedMft) -> BodyfileLines {
+        BodyfileLines {
+            standard_info: Some(self.format_si(mft)),
+            filename_info: self.format_fn(mft)
+        }
+    }
+}
+
+pub struct BodyfileLines {
+    standard_info: Option<String>,
+    filename_info: Option<String>
+}
+
+impl Iterator for BodyfileLines {
+    type Item = String;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.standard_info.is_some() {
+            return self.standard_info.take();
+        }
+        if self.filename_info.is_some() {
+            return self.filename_info.take();
+        }
+        return None;
     }
 }

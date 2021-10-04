@@ -6,6 +6,7 @@ use argparse::{ArgumentParser, Store};
 use anyhow::Result;
 use simplelog::{TermLogger, LevelFilter, Config, TerminalMode, ColorChoice};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::io::Write;
 
 struct Mft2BodyfileApplication {
     mft_file: PathBuf,
@@ -36,29 +37,24 @@ impl Mft2BodyfileApplication {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<()> {
-        self.parse_options()?;
-        
-        let mut parser = MftParser::from_path(&self.mft_file).unwrap();
-        
-        let mut pp = PreprocessedMft::new();
-        let bar = ProgressBar::new(parser.get_entry_count()).with_message("parsing $MFT entries");
+    fn new_progress_bar(&self, message: &'static str, count:u64) -> ProgressBar {
+        let bar = ProgressBar::new(count).with_message(message);
         bar.set_style(ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7}({percent}%) {msg}")
             .progress_chars("##-"));
         bar.set_draw_delta(1000);
+        return bar;
+    }
+
+    pub fn run(&mut self) -> Result<()> {
+        self.parse_options()?;
+        
+        let mut pp = PreprocessedMft::new();
+        let mut parser = MftParser::from_path(&self.mft_file).unwrap();
+        let bar = self.new_progress_bar("parsing $MFT entries", parser.get_entry_count());
 
         for mft_entry in parser.iter_entries().filter_map(Result::ok) {
             bar.inc(1);
-
-            //
-            // ignore contents of $MFT metadata entries
-            //
-            /*
-            if mft_entry.header.record_number < 12 {
-                continue;
-            } else
-            */
 
             //
             // ignore contents of $MFT extension entries
@@ -84,13 +80,15 @@ impl Mft2BodyfileApplication {
             }
         }
         bar.finish();
-        //let hundred_percent = pp.borrow().len();
 
-        //eprintln!("found {} entries in $MFT", hundred_percent);
-
-        //pp.borrow_mut().link_entries();
-        //pp.borrow().update_bf_lines();
-        pp.print_entries();
+        let bar = self.new_progress_bar("exporting bodyfile lines", 2*pp.entries_count());
+        let stdout = std::io::stdout();
+        let mut stdout_lock = stdout.lock();
+        for entry in pp.iter_entries() {
+            stdout_lock.write_all(entry.as_bytes())?;
+            bar.inc(1);
+        }
+        bar.finish();
         Ok(())
     }
 }

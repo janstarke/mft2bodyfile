@@ -1,17 +1,18 @@
 use mft::MftEntry;
 use std::collections::HashMap;
-use std::io::Write;
 use winstructs::ntfs::mft_reference::MftReference;
 use crate::intern::CompleteMftEntry;
 
 pub struct PreprocessedMft {
     complete_entries: HashMap<MftReference, CompleteMftEntry>,
+    count: u64,
 }
 
 impl PreprocessedMft {
     pub fn new() -> Self {
         Self {
             complete_entries: HashMap::new(),
+            count: 0,
         }
     }
     pub fn add_entry(&mut self, entry: MftEntry) {
@@ -23,6 +24,7 @@ impl PreprocessedMft {
                 None => {
                     let ce = CompleteMftEntry::from_base_entry(reference, entry);
                     let _ = self.complete_entries.insert(reference, ce);
+                    self.count += 1;
                 }
             }
         } else
@@ -40,6 +42,7 @@ impl PreprocessedMft {
                     None => {
                         let ce = CompleteMftEntry::from_nonbase_entry(reference, entry);
                         let _ = self.complete_entries.insert(base_reference, ce);
+                        self.count += 1;
                     }
                 }
             }
@@ -57,17 +60,14 @@ impl PreprocessedMft {
         }
     }
 
-    pub fn print_entries(&self) {
-        let stdout = std::io::stdout();
-        let mut stdout_lock = stdout.lock();
-
-        for entry in self.complete_entries.values() {
-            stdout_lock
-                .write_all(entry.format_si(self).as_bytes())
-                .unwrap();
-            if let Some(fn_info) = entry.format_fn(self) {
-                stdout_lock.write_all(fn_info.as_bytes()).unwrap();
-            }
-        }
+    pub fn entries_count(&self) -> u64 {
+        self.count
+    }
+    
+    pub fn iter_entries<'a>(&'a self) -> Box<dyn Iterator<Item=String> + 'a>{
+        Box::new(self.complete_entries
+            .values()
+            .map(move |c| c.bodyfile_lines(self))
+            .flatten())
     }
 }
