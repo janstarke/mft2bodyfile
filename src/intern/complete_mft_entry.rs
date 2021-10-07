@@ -1,17 +1,37 @@
 use anyhow::Result;
 use likely_stable::unlikely;
-use mft::attribute::x10::StandardInfoAttr;
-use mft::attribute::x30::{FileNameAttr, FileNamespace};
 use mft::attribute::{MftAttributeContent, MftAttributeType};
 use std::cell::RefCell;
 use mft::MftEntry;
 use winstructs::ntfs::mft_reference::MftReference;
 use crate::intern::PreprocessedMft;
+use crate::{TimestampTuple, FilenameInfo};
 
+///
+/// Represents the set of all $MFT entries that make up a files metadata.
+/// The idea is to store only the minimum required data to generate 
+/// a bodyfile line, which would be 
+/// 
+///  - the base reference (needed to print the `inode` number)
+///  - the `$FILENAME` attribute. One file can have more than one `$FILENAME`
+///    attribbutes, but we store only one of them. We choose the right attribute
+///    using the following priority:
+///    
+///    1. `Win32AndDos`
+///    2. `Win32`
+///    3. `POSIX`
+///    4. ´DOS`
+///    If a file doesn't have a `$FILENAME` attribute, which may happen with already deleted files,
+///    then a filename is being generated, but *not* stored in `file_name_attribute`
+/// 
+///    This attribute is required to display the filename, but also contains four timestamps,
+///    which are being displayed as well.
+/// 
+///  - the `$STANDARD_INFORMATION` attribute. This attribute contains four timestamps.
 pub struct CompleteMftEntry {
     base_entry: MftReference,
-    file_name_attribute: Option<FileNameAttr>,
-    standard_info_attribute: Option<StandardInfoAttr>,
+    file_name_attribute: Option<FilenameInfo>,
+    standard_info_timestamps: Option<TimestampTuple>,
     full_path: RefCell<String>,
     is_allocated: bool,
 }
@@ -21,7 +41,7 @@ impl CompleteMftEntry {
         let mut c = Self {
             base_entry: entry_reference,
             file_name_attribute: None,
-            standard_info_attribute: None,
+            standard_info_timestamps: None,
             full_path: RefCell::new(String::new()),
             is_allocated: entry.is_allocated(),
         };
@@ -34,7 +54,7 @@ impl CompleteMftEntry {
         let mut c = Self {
             base_entry: entry.header.base_reference,
             file_name_attribute: None,
-            standard_info_attribute: None,
+            standard_info_timestamps: None,
             full_path: RefCell::new(String::new()),
             is_allocated: false,
         };
@@ -68,29 +88,16 @@ impl CompleteMftEntry {
         {
             match attr_result.data {
                 MftAttributeContent::AttrX10(standard_info_attribute) => {
-                    if self.standard_info_attribute.is_none() {
-                        self.standard_info_attribute = Some(standard_info_attribute);
+                    if self.standard_info_timestamps.is_none() {
+                        self.standard_info_timestamps = Some(TimestampTuple::from(&standard_info_attribute));
                     } else {
                         panic!("multiple standard information attributes found")
                     }
                 }
                 MftAttributeContent::AttrX30(file_name_attribute) => {
                     match self.file_name_attribute {
-                        None => self.file_name_attribute = Some(file_name_attribute),
-                        Some(ref mut name_attr) => match file_name_attribute.namespace {
-                            FileNamespace::Win32AndDos => *name_attr = file_name_attribute,
-                            FileNamespace::Win32 => {
-                                if name_attr.namespace != FileNamespace::Win32AndDos {
-                                    *name_attr = file_name_attribute
-                                }
-                            }
-                            FileNamespace::POSIX => {
-                                if name_attr.namespace == FileNamespace::DOS {
-                                    *name_attr = file_name_attribute
-                                }
-                            }
-                            FileNamespace::DOS => {}
-                        },
+                        None => self.file_name_attribute = Some(FilenameInfo::from(&file_name_attribute)),
+                        Some(ref mut name_attr) => name_attr.update(&file_name_attribute),
                     }
                 }
                 _ => panic!("filter for iter_attributes_matching() isn't working"),
@@ -98,10 +105,10 @@ impl CompleteMftEntry {
         }
     }
 
-    pub fn parent(&self) -> Option<MftReference> {
+    pub fn parent(&self) -> Option<&MftReference> {
         match self.file_name_attribute {
             None => None,
-            Some(ref fn_attr) => Some(fn_attr.parent),
+            Some(ref fn_attr) => Some(fn_attr.parent()),
         }
     }
 
@@ -114,19 +121,19 @@ impl CompleteMftEntry {
                 return self.full_path.borrow().clone();
             }
 
-            match self.file_name_attribute() {
+            match self.filename_info() {
                 Some(name) => {
                     match self.parent() {
-                        None => *self.full_path.borrow_mut() = name.name.to_string(),
+                        None => *self.full_path.borrow_mut() = name.filename().clone(),
                         Some(p) => {
                             // prevent endless recursion, mainly for $MFT entry 5 (which is the root directory)
-                            assert_ne!(p, self.base_entry);
+                            assert_ne!(p, &self.base_entry);
 
                             let parent_path = mft.get_full_path(&p);
                             let mut fp = self.full_path.borrow_mut();
                             *fp = parent_path;
                             fp.push('/');
-                            fp.push_str(&name.name);
+                            fp.push_str(name.filename());
                         }
                     }
                 }
@@ -143,7 +150,7 @@ impl CompleteMftEntry {
 
     pub fn filesize(&self) -> u64 {
         match self.file_name_attribute {
-            Some(ref fn_attr) => fn_attr.logical_size,
+            Some(ref fn_attr) => fn_attr.logical_size(),
             None => 0,
         }
     }
@@ -183,10 +190,10 @@ impl CompleteMftEntry {
                 let display_name = format!("{} ($FILENAME)", self.get_full_path(mft));
                 Some(self.format(
                     &display_name,
-                    fn_attr.accessed.timestamp(),
-                    fn_attr.mft_modified.timestamp(),
-                    fn_attr.modified.timestamp(),
-                    fn_attr.created.timestamp(),
+                    fn_attr.timestamps().accessed(),
+                    fn_attr.timestamps().mft_modified(),
+                    fn_attr.timestamps().modified(),
+                    fn_attr.timestamps().created(),
                 ))
             }
             None => {
@@ -195,19 +202,19 @@ impl CompleteMftEntry {
         }
     }
     pub fn format_si(&self, mft: &PreprocessedMft) -> String {
-        match self.standard_info_attribute {
-            Some(ref standard_info_attribute) => self.format(
+        match self.standard_info_timestamps {
+            Some(ref standard_info_timestamps) => self.format(
                 &self.get_full_path(mft),
-                standard_info_attribute.accessed.timestamp(),
-                standard_info_attribute.mft_modified.timestamp(),
-                standard_info_attribute.modified.timestamp(),
-                standard_info_attribute.created.timestamp(),
+                standard_info_timestamps.accessed(),
+                standard_info_timestamps.mft_modified(),
+                standard_info_timestamps.modified(),
+                standard_info_timestamps.created(),
             ),
             None => panic!("missing standard information"),
         }
     }
 
-    pub fn file_name_attribute(&self) -> &Option<FileNameAttr> {
+    pub fn filename_info(&self) -> &Option<FilenameInfo> {
         if self.file_name_attribute.is_none() {
             if self.is_allocated {
                 #[cfg(debug_assertions)]
