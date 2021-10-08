@@ -1,17 +1,17 @@
+use crate::intern::PreprocessedMft;
+use crate::{FilenameInfo, TimestampTuple};
 use anyhow::Result;
 use likely_stable::unlikely;
 use mft::attribute::{MftAttributeContent, MftAttributeType};
-use std::cell::RefCell;
 use mft::MftEntry;
+use std::cell::RefCell;
 use winstructs::ntfs::mft_reference::MftReference;
-use crate::intern::PreprocessedMft;
-use crate::{TimestampTuple, FilenameInfo};
 
 ///
 /// Represents the set of all $MFT entries that make up a files metadata.
-/// The idea is to store only the minimum required data to generate 
-/// a bodyfile line, which would be 
-/// 
+/// The idea is to store only the minimum required data to generate
+/// a bodyfile line, which would be
+///
 ///  - the base reference (needed to print the `inode` number)
 ///  - the `$FILENAME` attribute. One file can have more than one `$FILENAME`
 ///    attribbutes, but we store only one of them. We choose the right attribute
@@ -23,10 +23,10 @@ use crate::{TimestampTuple, FilenameInfo};
 ///    4. ´DOS`
 ///    If a file doesn't have a `$FILENAME` attribute, which may happen with already deleted files,
 ///    then a filename is being generated, but *not* stored in `file_name_attribute`
-/// 
+///
 ///    This attribute is required to display the filename, but also contains four timestamps,
 ///    which are being displayed as well.
-/// 
+///
 ///  - the `$STANDARD_INFORMATION` attribute. This attribute contains four timestamps.
 pub struct CompleteMftEntry {
     base_entry: MftReference,
@@ -45,8 +45,13 @@ impl CompleteMftEntry {
             full_path: RefCell::new(String::new()),
             is_allocated: entry.is_allocated(),
         };
-        c.update_attributes(&entry, vec![MftAttributeType::StandardInformation,
-                                         MftAttributeType::FileName]);
+        c.update_attributes(
+            &entry,
+            vec![
+                MftAttributeType::StandardInformation,
+                MftAttributeType::FileName,
+            ],
+        );
         c
     }
 
@@ -69,8 +74,13 @@ impl CompleteMftEntry {
     pub fn set_base_entry(&mut self, entry_ref: MftReference, entry: MftEntry) {
         assert_eq!(self.base_entry, entry_ref);
 
-        self.update_attributes(&entry, vec![MftAttributeType::StandardInformation,
-                                            MftAttributeType::FileName]);
+        self.update_attributes(
+            &entry,
+            vec![
+                MftAttributeType::StandardInformation,
+                MftAttributeType::FileName,
+            ],
+        );
         self.is_allocated = entry.is_allocated();
     }
 
@@ -78,8 +88,7 @@ impl CompleteMftEntry {
         self.update_attributes(&e, vec![MftAttributeType::FileName]);
     }
 
-    fn update_attributes(&mut self, entry: &MftEntry,
-                                    attribute_types: Vec<MftAttributeType>) {
+    fn update_attributes(&mut self, entry: &MftEntry, attribute_types: Vec<MftAttributeType>) {
         /*
             do nothing if we already have all attributes
         */
@@ -91,14 +100,15 @@ impl CompleteMftEntry {
             }
         }
 
-        let a = entry.iter_attributes_matching(Some(attribute_types));
-        let b = a.filter_map(Result::ok);
-        for attr_result in b
+        for attr_result in entry
+            .iter_attributes_matching(Some(attribute_types))
+            .filter_map(Result::ok)
         {
             match attr_result.data {
                 MftAttributeContent::AttrX10(standard_info_attribute) => {
                     if self.standard_info_timestamps.is_none() {
-                        self.standard_info_timestamps = Some(TimestampTuple::from(&standard_info_attribute));
+                        self.standard_info_timestamps =
+                            Some(TimestampTuple::from(&standard_info_attribute));
                     } else {
                         panic!("multiple standard information attributes found")
                     }
@@ -111,7 +121,10 @@ impl CompleteMftEntry {
                 }*/
                 MftAttributeContent::AttrX30(file_name_attribute) => {
                     match self.file_name_attribute {
-                        None => self.file_name_attribute = Some(FilenameInfo::from(&file_name_attribute)),
+                        None => {
+                            self.file_name_attribute =
+                                Some(FilenameInfo::from(&file_name_attribute))
+                        }
                         Some(ref mut name_attr) => name_attr.update(&file_name_attribute),
                     }
 
@@ -217,9 +230,7 @@ impl CompleteMftEntry {
                     fn_attr.timestamps().created(),
                 ))
             }
-            None => {
-                None
-            }
+            None => None,
         }
     }
     pub fn format_si(&self, mft: &PreprocessedMft) -> String {
@@ -251,26 +262,26 @@ impl CompleteMftEntry {
             self.base_entry().sequence
             );
         } /*else {
-                log::warn!(
-                "no $FILE_NAME attribute found for $MFT entry {}-{}, but this is a deleted file",
-                self.base_entry().entry,
-                self.base_entry().sequence
-            );
-            }*/
+              log::warn!(
+              "no $FILE_NAME attribute found for $MFT entry {}-{}, but this is a deleted file",
+              self.base_entry().entry,
+              self.base_entry().sequence
+          );
+          }*/
         &self.file_name_attribute
     }
 
     pub fn bodyfile_lines(&self, mft: &PreprocessedMft) -> BodyfileLines {
         BodyfileLines {
             standard_info: Some(self.format_si(mft)),
-            filename_info: self.format_fn(mft)
+            filename_info: self.format_fn(mft),
         }
     }
 }
 
 pub struct BodyfileLines {
     standard_info: Option<String>,
-    filename_info: Option<String>
+    filename_info: Option<String>,
 }
 
 impl Iterator for BodyfileLines {
