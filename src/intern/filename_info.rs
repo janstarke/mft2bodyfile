@@ -28,6 +28,10 @@ impl FilenameInfo {
     pub fn parent(&self) -> &MftReference { &self.parent }
     pub fn logical_size(&self) -> u64 { self.logical_size }
 
+    pub fn is_final(&self) -> bool {
+        self.namespace == FileNamespace::Win32AndDos
+    }
+
     pub fn update(&mut self, attr: &FileNameAttr) {
         match attr.namespace {
             FileNamespace::Win32AndDos => self.do_update(attr),
@@ -49,7 +53,7 @@ impl FilenameInfo {
         self.filename = attr.name.clone();
         self.namespace = attr.namespace.clone();
         self.timestamps = TimestampTuple::from(attr);
-        self.parent = attr.parent.clone();
+        self.parent = attr.parent;
         self.logical_size = attr.logical_size;
     }
 }

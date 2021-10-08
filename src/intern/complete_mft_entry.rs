@@ -45,9 +45,9 @@ impl CompleteMftEntry {
             full_path: RefCell::new(String::new()),
             is_allocated: entry.is_allocated(),
         };
-        c.update_attributes(&entry);
-
-        return c;
+        c.update_attributes(&entry, vec![MftAttributeType::StandardInformation,
+                                         MftAttributeType::FileName]);
+        c
     }
 
     pub fn from_nonbase_entry(_entry_ref: MftReference, entry: MftEntry) -> Self {
@@ -59,8 +59,7 @@ impl CompleteMftEntry {
             is_allocated: false,
         };
         c.add_nonbase_entry(entry);
-
-        return c;
+        c
     }
 
     pub fn base_entry(&self) -> &MftReference {
@@ -69,22 +68,32 @@ impl CompleteMftEntry {
 
     pub fn set_base_entry(&mut self, entry_ref: MftReference, entry: MftEntry) {
         assert_eq!(self.base_entry, entry_ref);
-        self.update_attributes(&entry);
+
+        self.update_attributes(&entry, vec![MftAttributeType::StandardInformation,
+                                            MftAttributeType::FileName]);
         self.is_allocated = entry.is_allocated();
     }
 
     pub fn add_nonbase_entry(&mut self, e: MftEntry) {
-        self.update_attributes(&e);
+        self.update_attributes(&e, vec![MftAttributeType::FileName]);
     }
 
-    fn update_attributes(&mut self, entry: &MftEntry) {
-        let my_attribute_types = vec![
-            MftAttributeType::FileName,
-            MftAttributeType::StandardInformation,
-        ];
-        for attr_result in entry
-            .iter_attributes_matching(Some(my_attribute_types))
-            .filter_map(Result::ok)
+    fn update_attributes(&mut self, entry: &MftEntry,
+                                    attribute_types: Vec<MftAttributeType>) {
+        /*
+            do nothing if we already have all attributes
+        */
+        if self.standard_info_timestamps.is_some() {
+            if let Some(filename_info) = &self.file_name_attribute {
+                if filename_info.is_final() {
+                    return;
+                }
+            }
+        }
+
+        let a = entry.iter_attributes_matching(Some(attribute_types));
+        let b = a.filter_map(Result::ok);
+        for attr_result in b
         {
             match attr_result.data {
                 MftAttributeContent::AttrX10(standard_info_attribute) => {
@@ -94,10 +103,22 @@ impl CompleteMftEntry {
                         panic!("multiple standard information attributes found")
                     }
                 }
+                /*
+                MftAttributeContent::AttrX20(attribute_list) => {
+                    for attr_entry in attribute_list.entries {
+                        if attr_entry.attribute_type == 0x10
+                    }
+                }*/
                 MftAttributeContent::AttrX30(file_name_attribute) => {
                     match self.file_name_attribute {
                         None => self.file_name_attribute = Some(FilenameInfo::from(&file_name_attribute)),
                         Some(ref mut name_attr) => name_attr.update(&file_name_attribute),
+                    }
+
+                    if let Some(file_name_attribute) = &self.file_name_attribute {
+                        if file_name_attribute.is_final() {
+                            return;
+                        }
                     }
                 }
                 _ => panic!("filter for iter_attributes_matching() isn't working"),
@@ -129,7 +150,7 @@ impl CompleteMftEntry {
                             // prevent endless recursion, mainly for $MFT entry 5 (which is the root directory)
                             assert_ne!(p, &self.base_entry);
 
-                            let parent_path = mft.get_full_path(&p);
+                            let parent_path = mft.get_full_path(p);
                             let mut fp = self.full_path.borrow_mut();
                             *fp = parent_path;
                             fp.push('/');
@@ -215,30 +236,28 @@ impl CompleteMftEntry {
     }
 
     pub fn filename_info(&self) -> &Option<FilenameInfo> {
-        if self.file_name_attribute.is_none() {
-            if self.is_allocated {
-                #[cfg(debug_assertions)]
-                panic!(
-                    "no $FILE_NAME attribute found for $MFT entry {}-{}",
-                    self.base_entry().entry,
-                    self.base_entry().sequence
-                );
-
-                #[cfg(not(debug_assertions))]
-                log::fatal!(
-                "no $FILE_NAME attribute found for $MFT entry {}-{}. This is fatal because this is not a deleted file",
+        if self.file_name_attribute.is_none() && self.is_allocated {
+            #[cfg(debug_assertions)]
+            panic!(
+                "no $FILE_NAME attribute found for $MFT entry {}-{}",
                 self.base_entry().entry,
                 self.base_entry().sequence
             );
-            } /*else {
+
+            #[cfg(not(debug_assertions))]
+            log::fatal!(
+            "no $FILE_NAME attribute found for $MFT entry {}-{}. This is fatal because this is not a deleted file",
+            self.base_entry().entry,
+            self.base_entry().sequence
+            );
+        } /*else {
                 log::warn!(
                 "no $FILE_NAME attribute found for $MFT entry {}-{}, but this is a deleted file",
                 self.base_entry().entry,
                 self.base_entry().sequence
             );
             }*/
-        }
-        return &self.file_name_attribute;
+        &self.file_name_attribute
     }
 
     pub fn bodyfile_lines(&self, mft: &PreprocessedMft) -> BodyfileLines {
@@ -263,6 +282,6 @@ impl Iterator for BodyfileLines {
         if self.filename_info.is_some() {
             return self.filename_info.take();
         }
-        return None;
+        None
     }
 }

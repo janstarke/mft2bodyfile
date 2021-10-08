@@ -18,3 +18,7 @@ likely_stable = "0.1.2"
 log = "0.4.14"
 num = "0.4.0"
 indicatif = "0.16.2"
+
+[profile.dev]
+debug = true
+split-debuginfo = "packed"

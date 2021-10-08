@@ -43,7 +43,7 @@ impl Mft2BodyfileApplication {
             .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7}({percent}%) {msg}")
             .progress_chars("##-"));
         bar.set_draw_delta(1000);
-        return bar;
+        bar
     }
 
     pub fn run(&mut self) -> Result<()> {
@@ -55,27 +55,23 @@ impl Mft2BodyfileApplication {
 
         for mft_entry in parser.iter_entries().filter_map(Result::ok) {
             bar.inc(1);
-
-            //
-            // ignore contents of $MFT extension entries
-            //
-            if (12..24).contains(&mft_entry.header.record_number) {
-                continue;
-            } else
             
-            //
-            // ignore unallocated entries without content
-            //
-            if mft_entry.header.used_entry_size == 0 {
+            if (12..24).contains(&mft_entry.header.record_number) {
+                //
+                // ignore contents of $MFT extension entries
+                //
+                continue;
+            } else if mft_entry.header.used_entry_size == 0 {  
+                //
+                // ignore unallocated entries without content
+                //
                 if mft_entry.is_allocated() {
                     log::info!("found allocated entry with zero entry size: {}", mft_entry.header.record_number);
                 }
-            }
-            
-            //
-            // handle all other entries
-            //
-            else {
+            } else {
+                //
+                // handle all other entries
+                //
                 pp.add_entry(mft_entry);
             }
         }
