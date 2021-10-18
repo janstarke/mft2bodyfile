@@ -4,6 +4,7 @@ version = "0.5.1"
 authors = ["Jan Starke <Jan.Starke@t-systems.com>"]
 edition = "2018"
 description = "parses an $MFT file to bodyfile (stdout)"
+homepage = "https://www.github.com/janstarke/mft2bodyfile"
 license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -19,6 +20,6 @@ log = "0.4.14"
 num = "0.4.0"
 indicatif = "0.16.2"
 
-[profile.dev]
-debug = true
-split-debuginfo = "packed"
+#[profile.dev]
+#debug = true
+#split-debuginfo = "packed"
