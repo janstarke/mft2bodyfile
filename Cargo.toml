@@ -20,6 +20,9 @@ log = "0.4.14"
 num = "0.4.0"
 indicatif = "0.16.2"
 
+from_bytes = "0.1"
+from_bytes_derive = "0.1"
+
 #[profile.dev]
 #debug = true
 #split-debuginfo = "packed"
