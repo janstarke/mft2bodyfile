@@ -1,4 +1,4 @@
-use crate::CommonUsnRecord;
+use crate::{CommonUsnRecord, UsnReaderError};
 use std::io::Result;
 use std::fs::File;
 use std::path::PathBuf;
@@ -39,16 +39,22 @@ impl IntoIterator for UsnJrnlReader {
 }
 
 fn next_from_data(data: &[u8], index: &mut usize) -> Option<CommonUsnRecord> {
-    match CommonUsnRecord::from(data, *index) {
-        Ok(record) => {
-            *index += record.header.RecordLength as usize;
-            Some(record)
-        }
+    if *index < data.len() {
+        match CommonUsnRecord::from(data, *index) {
+            Ok(record) => {
+                *index += record.header.RecordLength as usize;
+                Some(record)
+            }
 
-        Err(why) => {
-            log::error!("error while parsing logfile: {}", why);
-            None
+            Err(UsnReaderError::NoMoreData) => None,
+
+            Err(why) => {
+                log::error!("error while parsing logfile: {}", why);
+                None
+            }
         }
+    } else {
+        None
     }
 }
 
