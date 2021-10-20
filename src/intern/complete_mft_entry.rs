@@ -362,7 +362,7 @@ impl CompleteMftEntry {
             );
 
             #[cfg(not(debug_assertions))]
-            log::fatal!(
+            log::error!(
             "no $FILE_NAME attribute found for $MFT entry {}-{}. This is fatal because this is not a deleted file",
             self.base_entry().entry,
             self.base_entry().sequence
