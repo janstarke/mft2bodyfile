@@ -38,7 +38,7 @@ impl fmt::Display for UsnReason {
         .filter(|x|self.has_flag(*x))
         .map(|x| x.to_string())
         .collect();
-    write!(f, "{}", flags.join("|"))
+    write!(f, "{}", flags.join("+"))
   }
 }
 

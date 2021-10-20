@@ -2,17 +2,16 @@ use mft::MftEntry;
 use std::collections::HashMap;
 use winstructs::ntfs::mft_reference::MftReference;
 use crate::intern::CompleteMftEntry;
+use crate::usnjrnl::CommonUsnRecord;
 
 pub struct PreprocessedMft {
-    complete_entries: HashMap<MftReference, CompleteMftEntry>,
-    count: u64,
+    complete_entries: HashMap<MftReference, CompleteMftEntry>
 }
 
 impl PreprocessedMft {
     pub fn new() -> Self {
         Self {
-            complete_entries: HashMap::new(),
-            count: 0,
+            complete_entries: HashMap::new()
         }
     }
     pub fn add_entry(&mut self, entry: MftEntry) {
@@ -24,7 +23,6 @@ impl PreprocessedMft {
                 None => {
                     let ce = CompleteMftEntry::from_base_entry(reference, entry);
                     let _ = self.complete_entries.insert(reference, ce);
-                    self.count += 1;
                 }
             }
         } else if entry.is_allocated() { /* && ! PreprocessedMft::is_base_entry(&entry) */
@@ -39,8 +37,19 @@ impl PreprocessedMft {
                 None => {
                     let ce = CompleteMftEntry::from_nonbase_entry(reference, entry);
                     let _ = self.complete_entries.insert(base_reference, ce);
-                    self.count += 1;
                 }
+            }
+        }
+    }
+
+    pub fn add_usnjrnl_records(&mut self, reference: MftReference, records: Vec<CommonUsnRecord>) {
+        match self.complete_entries.get_mut(&reference) {
+            Some(e) => {
+                e.add_usnjrnl_records(records);
+            }
+            None => {
+                let ce = CompleteMftEntry::from_usnjrnl_records(reference, records);
+                let _ = self.complete_entries.insert(reference, ce);
             }
         }
     }
@@ -56,8 +65,8 @@ impl PreprocessedMft {
         }
     }
 
-    pub fn entries_count(&self) -> u64 {
-        self.count
+    pub fn entries_count(&self) -> usize {
+        self.complete_entries.len()
     }
     
     pub fn iter_entries<'a>(&'a self) -> Box<dyn Iterator<Item=String> + 'a>{

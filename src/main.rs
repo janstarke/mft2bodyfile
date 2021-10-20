@@ -5,13 +5,11 @@ use usnjrnl::*;
 use intern::*;
 use mft::MftParser;
 use std::path::PathBuf;
-use std::fs::File;
 use argparse::{ArgumentParser, Store};
 use anyhow::Result;
 use simplelog::{TermLogger, LevelFilter, Config, TerminalMode, ColorChoice};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::Write;
-use memmap::MmapOptions;
 
 struct Mft2BodyfileApplication {
     mft_file: PathBuf,
@@ -104,8 +102,16 @@ impl Mft2BodyfileApplication {
         }
         bar.finish();
         let usnjrnl = usnjrnl_thread.join().unwrap();
+        if usnjrnl.len() > 0 {
+            let bar = self.new_progress_bar("merging $UsnJrnl entries", usnjrnl.len() as u64);
+            for (reference, records) in usnjrnl.into_iter() {
+                pp.add_usnjrnl_records(reference, records);
+                bar.inc(1);
+            }
+            bar.finish();
+        }
 
-        let bar = self.new_progress_bar("exporting bodyfile lines", 2*pp.entries_count());
+        let bar = self.new_progress_bar("exporting bodyfile lines", 2*pp.entries_count() as u64);
         let stdout = std::io::stdout();
         let mut stdout_lock = stdout.lock();
         for entry in pp.iter_entries() {

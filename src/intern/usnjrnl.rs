@@ -2,8 +2,11 @@ use std::collections::hash_map::HashMap;
 use crate::usnjrnl::*;
 use winstructs::ntfs::mft_reference::MftReference;
 
+pub type KeyType = MftReference;
+pub type ValueType = Vec<CommonUsnRecord>;
+
 pub struct UsnJrnl {
-    entries: HashMap<MftReference, Vec<CommonUsnRecord>>
+    entries: HashMap<KeyType, ValueType>
 }
 
 impl UsnJrnl {
@@ -12,11 +15,19 @@ impl UsnJrnl {
             entries: HashMap::new()
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn into_iter(self) -> std::collections::hash_map::IntoIter<KeyType, ValueType> {
+        self.entries.into_iter()
+    }
 }
 
 impl From<UsnJrnlReader> for UsnJrnl {
     fn from(reader: UsnJrnlReader) -> Self {
-        let mut entries: HashMap<MftReference, Vec<CommonUsnRecord>> = HashMap::new();
+        let mut entries: HashMap<KeyType, ValueType> = HashMap::new();
         for entry in reader.into_iter() {
             match &entry.data {
                 UsnRecordData::V2(data) => {

@@ -81,6 +81,26 @@ pub enum UsnRecordData {
   */
 }
 
+impl UsnRecordData {
+  pub fn timestamp(&self) -> &DateTime<Utc> {
+    match self {
+      Self::V2(data) => &data.TimeStamp
+    }
+  }
+
+  pub fn filename(&self) -> &str {
+    match self {
+      Self::V2(data) => &data.FileName
+    }
+  }
+
+  pub fn reason(&self) -> &UsnReason {
+    match self {
+      Self::V2(data) => &data.Reason
+    }
+  }
+}
+
 #[derive(PackedStruct, Debug, StructFromBytes, PackedSize)]
 #[packed_struct(bit_numbering = "msb0", endian = "lsb")]
 pub struct UsnRecordCommonHeader {
