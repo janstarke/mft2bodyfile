@@ -305,21 +305,48 @@ impl CompleteMftEntry {
         }
     }
 
+    /// returns the filename stored in the `$MFT`, if any, or None
+    fn mft_filename(&self) -> Option<&String> {
+        match &self.file_name_attribute {
+            Some(fni) => Some(fni.filename()),
+            None => None
+        }
+    }
+
     fn format_usnjrnl(&self, mft: &PreprocessedMft, record: &CommonUsnRecord, usnjrnl_longflags: bool) -> String {
         match &record.data {
             UsnRecordData::V2(data) => {
-                
-                let display_name = if usnjrnl_longflags {
-                    format!("{} ($UsnJrnl filename={} reason={:+})",
-                        self.get_full_path(mft),
-                        data.FileName,
-                        data.Reason)
-                } else {
-                    format!("{} ($UsnJrnl filename={} reason={})",
-                        self.get_full_path(mft),
-                        data.FileName,
-                        data.Reason)
+                let filename_info = match self.mft_filename() {
+                    None => format!(" filename={}", data.FileName),
+                    Some(f) => if f != &data.FileName {
+                        format!(" filename={}", data.FileName)
+                    } else {
+                        "".to_owned()
+                    }
                 };
+
+                let reason_info = if usnjrnl_longflags {
+                    format!(" reason={:+}", data.Reason)
+                } else {
+                    format!(" reason={}", data.Reason)
+                };
+
+                let parent_info = match &self.file_name_attribute {
+                    Some(fni) => {
+                        if fni.parent() != &data.ParentFileReferenceNumber {
+                            format!(" parent='{}'", mft.get_full_path(&data.ParentFileReferenceNumber))
+                        } else {
+                            "".to_owned()
+                        }
+                    }
+                    None => format!(" parent='{}'", mft.get_full_path(&data.ParentFileReferenceNumber))
+                };
+
+                let display_name = format!("{} ($UsnJrnl{}{}{})",
+                        self.get_full_path(mft),
+                        filename_info,
+                        parent_info,
+                        reason_info);
                 let timestamp = data.TimeStamp.timestamp();
                 self.format(&display_name, timestamp, timestamp, timestamp, timestamp)
             }
