@@ -67,13 +67,14 @@ impl Mft2BodyfileApplication {
     pub fn run(&mut self) -> Result<()> {
         self.parse_options()?;
 
-        if let Some(jrnl_path) = &self.usnjrnl {
-            let usnjrnl = UsnJrnlReader::from(jrnl_path)?;
-            for entry in usnjrnl.into_iter() {
-                println!("found entry: {:?}", entry);
+        /* read $UsnJrnl */
+        let usnjrnl_path = self.usnjrnl.clone();
+        let usnjrnl_thread = std::thread::spawn(|| {
+            match usnjrnl_path {
+                Some(jrnl_path) => UsnJrnl::from(UsnJrnlReader::from(&jrnl_path).unwrap()),
+                None => UsnJrnl::new()
             }
-            return Ok(());
-        }
+        });
         
         let mut pp = PreprocessedMft::new();
         let mut parser = MftParser::from_path(&self.mft_file).unwrap();
@@ -102,6 +103,7 @@ impl Mft2BodyfileApplication {
             }
         }
         bar.finish();
+        let usnjrnl = usnjrnl_thread.join().unwrap();
 
         let bar = self.new_progress_bar("exporting bodyfile lines", 2*pp.entries_count());
         let stdout = std::io::stdout();
