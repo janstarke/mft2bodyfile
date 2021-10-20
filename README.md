@@ -82,6 +82,6 @@ Tue Aug 31 2021 10:49:51,0,macb,0,0,0,336826,"/Users/tmpadmin/AppData/Local/Micr
 
 # What are the limits of this tool?
 
-Consider the following situation: You have a file, which has a lot of attributes which is so long that not all attributes can be stored in the base entry. Then, one or more additional entries are used. If such a file is deleted and the base entry is reused for another file, we can only see that there once a file has existed (using the nonbase entry), but we cannot see the original filename. In addition, if we cannot see the `$FILENAME` attribute, we also cannot see the `$STANDARD_INFORMATION` attribute, which has a lower attribute id. So, we see traces that some files once existed, but we neither see its name nor any timestamps.
+Consider the following situation: You have a file, which has a list of attributes which is so long that not all attributes can be stored in the base entry. Then, one or more additional entries are used. If such a file is deleted and the base entry is reused for another file, we can only see that there once a file has existed (using the nonbase entry), but we cannot see the original filename. In addition, if we cannot see the `$FILENAME` attribute, we also cannot see the `$STANDARD_INFORMATION` attribute, which has a lower attribute id. So, we see traces that some files once existed, but we neither see its name nor any timestamps.
 
 If you provide a `$UsnJrnl:$J` file, chances are good that `mft2bodyfile` can find a filename even from deleted files.
