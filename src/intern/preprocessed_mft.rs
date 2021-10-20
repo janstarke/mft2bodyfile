@@ -68,6 +68,10 @@ impl PreprocessedMft {
     pub fn entries_count(&self) -> usize {
         self.complete_entries.len()
     }
+
+    pub fn bodyfile_lines_count(&self) -> usize {
+        self.complete_entries.values().map(|e| e.bodyfile_lines_count()).sum()
+    }
     
     pub fn iter_entries<'a>(&'a self) -> Box<dyn Iterator<Item=String> + 'a>{
         Box::new(self.complete_entries

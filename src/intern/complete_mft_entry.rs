@@ -354,6 +354,20 @@ impl CompleteMftEntry {
                                     .collect()
         }
     }
+
+    pub fn bodyfile_lines_count(&self) -> usize {
+        return match &self.standard_info_timestamps {
+            Some(_) => 1,
+            None    => 0,
+        }
+        +
+        match &self.file_name_attribute {
+            Some(_) => 1,
+            None    => 0,
+        }
+        +
+        self.usnjrnl_records.len();
+    }
 }
 
 pub struct BodyfileLines {

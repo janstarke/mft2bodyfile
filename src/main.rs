@@ -56,7 +56,7 @@ impl Mft2BodyfileApplication {
     fn new_progress_bar(&self, message: &'static str, count:u64) -> ProgressBar {
         let bar = ProgressBar::new(count).with_message(message);
         bar.set_style(ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7}({percent}%) {msg}")
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>9}/{len:9}({percent}%) {msg}")
             .progress_chars("##-"));
         bar.set_draw_delta(1000);
         bar
@@ -111,7 +111,7 @@ impl Mft2BodyfileApplication {
             bar.finish();
         }
 
-        let bar = self.new_progress_bar("exporting bodyfile lines", 2*pp.entries_count() as u64);
+        let bar = self.new_progress_bar("exporting bodyfile lines", pp.bodyfile_lines_count() as u64);
         let stdout = std::io::stdout();
         let mut stdout_lock = stdout.lock();
         for entry in pp.iter_entries() {
