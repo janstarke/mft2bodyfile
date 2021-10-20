@@ -1,5 +1,4 @@
 mod intern;
-mod usnjrnl;
 
 use usnjrnl::*;
 use intern::*;

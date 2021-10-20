@@ -1,6 +1,6 @@
 [package]
 name = "mft2bodyfile"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["Jan Starke <Jan.Starke@t-systems.com>"]
 edition = "2018"
 description = "parses an $MFT file to bodyfile (stdout)"
@@ -20,18 +20,7 @@ log = "0.4.14"
 num = "0.4.0"
 indicatif = "0.16.2"
 
-## required to parse binary data
-#from_bytes = "0.1"
-from_bytes = {version="0.2.1", features=["u8_arrays"]}
-from_bytes_derive = "0.2.1"
-memmap = "0.7"
-packed_struct = { version = "0.10", default-features = false, features=["byte_types_256"] }
-byteorder = "1.4"
-num-traits = "0.2"
-num-derive = "0.3"
-strum = { version = "0.22", features = ["derive"] }
-strum_macros = "0.22"
-chrono = "0.4"
+usnjrnl = "0.1"
 
 #[profile.dev]
 #debug = true

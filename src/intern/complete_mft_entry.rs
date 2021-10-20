@@ -5,9 +5,8 @@ use likely_stable::unlikely;
 use mft::attribute::{MftAttributeContent, MftAttributeType};
 use mft::MftEntry;
 use std::cell::RefCell;
-use chrono::{DateTime, Utc};
 use winstructs::ntfs::mft_reference::MftReference;
-use crate::usnjrnl::{CommonUsnRecord, UsnRecordData};
+use usnjrnl::{CommonUsnRecord, UsnRecordData};
 
 ///
 /// Represents the set of all $MFT entries that make up a files metadata.

@@ -2,7 +2,7 @@ use mft::MftEntry;
 use std::collections::HashMap;
 use winstructs::ntfs::mft_reference::MftReference;
 use crate::intern::CompleteMftEntry;
-use crate::usnjrnl::CommonUsnRecord;
+use usnjrnl::CommonUsnRecord;
 
 pub struct PreprocessedMft {
     complete_entries: HashMap<MftReference, CompleteMftEntry>

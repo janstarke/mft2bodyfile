@@ -1,5 +1,5 @@
 use std::collections::hash_map::HashMap;
-use crate::usnjrnl::*;
+use usnjrnl::*;
 use winstructs::ntfs::mft_reference::MftReference;
 
 pub type KeyType = MftReference;
