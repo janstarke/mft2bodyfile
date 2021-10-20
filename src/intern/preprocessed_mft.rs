@@ -73,10 +73,10 @@ impl PreprocessedMft {
         self.complete_entries.values().map(|e| e.bodyfile_lines_count()).sum()
     }
     
-    pub fn iter_entries<'a>(&'a self) -> Box<dyn Iterator<Item=String> + 'a>{
+    pub fn iter_entries<'a>(&'a self, usnjrnl_longflags: bool) -> Box<dyn Iterator<Item=String> + 'a>{
         Box::new(self.complete_entries
             .values()
-            .map(move |c| c.bodyfile_lines(self))
+            .map(move |c| c.bodyfile_lines(self, usnjrnl_longflags))
             .flatten())
     }
 }

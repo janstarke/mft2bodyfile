@@ -5,7 +5,7 @@ use usnjrnl::*;
 use intern::*;
 use mft::MftParser;
 use std::path::PathBuf;
-use argparse::{ArgumentParser, Store};
+use argparse::{ArgumentParser, Store, StoreTrue};
 use anyhow::Result;
 use simplelog::{TermLogger, LevelFilter, Config, TerminalMode, ColorChoice};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -13,7 +13,8 @@ use std::io::Write;
 
 struct Mft2BodyfileApplication {
     mft_file: PathBuf,
-    usnjrnl: Option<PathBuf>
+    usnjrnl: Option<PathBuf>,
+    usnjrnl_longflags: bool,
 }
 
 impl Mft2BodyfileApplication {
@@ -21,19 +22,23 @@ impl Mft2BodyfileApplication {
         Self {
             mft_file: PathBuf::new(),
             usnjrnl: None,
+            usnjrnl_longflags: false
         }
     }
 
     fn parse_options(&mut self) -> Result<()> {
         let mut filename = String::new();
         let mut usnjrnl_file = String::new();
+        let mut usnjrnl_longflags = false;
         {
             let mut ap = ArgumentParser::new();
             ap.set_description("parses an $MFT file to bodyfile (stdout)");
             ap.refer(&mut filename).add_argument("mft_file", Store, "path to $MFT").required();
             ap.refer(&mut usnjrnl_file).add_option(&["-J", "--journal"], Store, "path to $UsnJrnl $J file (optional)");
+            ap.refer(&mut usnjrnl_longflags).add_option(&["--journal-long-flags"], StoreTrue, "don't remove the USN_REASON_ prefix from the $UsnJrnl reason output");
             ap.parse_args_or_exit();
         }
+        self.usnjrnl_longflags = usnjrnl_longflags;
     
         let fp = PathBuf::from(&filename);
         if ! (fp.exists() && fp.is_file()) {
@@ -114,7 +119,7 @@ impl Mft2BodyfileApplication {
         let bar = self.new_progress_bar("exporting bodyfile lines", pp.bodyfile_lines_count() as u64);
         let stdout = std::io::stdout();
         let mut stdout_lock = stdout.lock();
-        for entry in pp.iter_entries() {
+        for entry in pp.iter_entries(self.usnjrnl_longflags) {
             stdout_lock.write_all(entry.as_bytes())?;
             bar.inc(1);
         }

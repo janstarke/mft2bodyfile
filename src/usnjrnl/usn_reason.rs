@@ -1,6 +1,7 @@
 use from_bytes::*;
 use from_bytes_derive::*;
 use packed_struct::prelude::*;
+use std::str;
 use std::fmt;
 use std::fmt::Debug;
 use std::string::ToString;
@@ -34,9 +35,10 @@ impl fmt::Debug for UsnReason {
 
 impl fmt::Display for UsnReason {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let usnjrnl_longflags = f.sign_plus();
     let flags:Vec<String> = UsnReasonValue::iter()
         .filter(|x|self.has_flag(*x))
-        .map(|x| x.to_string())
+        .map(|x| if ! usnjrnl_longflags {str::from_utf8(&x.to_string().into_bytes()[11..]).unwrap().to_owned()} else {x.to_string()})
         .collect();
     write!(f, "{}", flags.join("+"))
   }

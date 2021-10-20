@@ -305,14 +305,21 @@ impl CompleteMftEntry {
         }
     }
 
-    fn format_usnjrnl(&self, mft: &PreprocessedMft, record: &CommonUsnRecord) -> String {
+    fn format_usnjrnl(&self, mft: &PreprocessedMft, record: &CommonUsnRecord, usnjrnl_longflags: bool) -> String {
         match &record.data {
             UsnRecordData::V2(data) => {
-
-                let display_name = format!("{} ($UsnJrnl filename={} reason={})",
-                    self.get_full_path(mft),
-                    data.FileName,
-                    data.Reason);
+                
+                let display_name = if usnjrnl_longflags {
+                    format!("{} ($UsnJrnl filename={} reason={:+})",
+                        self.get_full_path(mft),
+                        data.FileName,
+                        data.Reason)
+                } else {
+                    format!("{} ($UsnJrnl filename={} reason={})",
+                        self.get_full_path(mft),
+                        data.FileName,
+                        data.Reason)
+                };
                 let timestamp = data.TimeStamp.timestamp();
                 self.format(&display_name, timestamp, timestamp, timestamp, timestamp)
             }
@@ -344,13 +351,13 @@ impl CompleteMftEntry {
         &self.file_name_attribute
     }
 
-    pub fn bodyfile_lines(&self, mft: &PreprocessedMft) -> BodyfileLines {
+    pub fn bodyfile_lines(&self, mft: &PreprocessedMft, usnjrnl_longflags: bool) -> BodyfileLines {
         BodyfileLines {
             standard_info: self.format_si(mft),
             filename_info: self.format_fn(mft),
             usnjrnl_records: self.usnjrnl_records
                                     .iter()
-                                    .map(|r| self.format_usnjrnl(mft, r))
+                                    .map(|r| self.format_usnjrnl(mft, r, usnjrnl_longflags))
                                     .collect()
         }
     }
