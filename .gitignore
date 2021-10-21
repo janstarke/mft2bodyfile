@@ -2,3 +2,5 @@
 Cargo.lock
 *.csv
 *.bodyfile
+*.mft
+*.dd
