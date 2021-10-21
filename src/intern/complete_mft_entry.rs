@@ -119,7 +119,7 @@ impl CompleteMftEntry {
         records.sort_by(
             |a, b| a.data.timestamp().partial_cmp(b.data.timestamp()).unwrap());
 
-        if self.usnjrnl_records.len() == 0 {
+        if self.usnjrnl_records.is_empty() {
             self.usnjrnl_records = records;
         } else {
             self.usnjrnl_records.extend(records);
@@ -193,14 +193,14 @@ impl CompleteMftEntry {
         let parent_path = match mft.get_full_path(parent) {
             ParentFolderName::MatchingSequenceNumber(s) => s,
             ParentFolderName::IncrementedSequenceNumber(s) => {
-                assert_eq!(self.is_allocated(), false);
+                assert!(! self.is_allocated());
                 *(self.deletion_status.borrow_mut()) = " (deleted)";
                 s
             }
             ParentFolderName::NoMatchFound(s) => s
         };
         *fp = parent_path;
-        if ! &fp.ends_with("/") {
+        if ! &fp.ends_with('/') {
             fp.push('/');
         }
         fp.push_str(my_name);
@@ -242,7 +242,7 @@ impl CompleteMftEntry {
     }
 
     fn filename_from_usnjrnl(&self) -> Option<&str> {
-        self.usnjrnl_records.last().and_then(|r| Some(r.data.filename()))
+        self.usnjrnl_records.last().map(|r| r.data.filename())
     }
     
     fn parent_from_usnjrnl(&self) -> Option<MftReference> {
@@ -307,16 +307,12 @@ impl CompleteMftEntry {
     }
 
     fn format_si(&self, mft: &PreprocessedMft) -> Option<String> {
-        match self.standard_info_timestamps {
-            Some(ref standard_info_timestamps) => Some(self.format(
-                &self.get_full_path(mft),
-                standard_info_timestamps.accessed(),
-                standard_info_timestamps.mft_modified(),
-                standard_info_timestamps.modified(),
-                standard_info_timestamps.created()),
-            ),
-            None => None,
-        }
+        self.standard_info_timestamps.as_ref().map(|si| self.format(
+            &self.get_full_path(mft),
+            si.accessed(),
+            si.mft_modified(),
+            si.modified(),
+            si.created()))
     }
 
     /// returns the filename stored in the `$MFT`, if any, or None
@@ -410,7 +406,7 @@ impl CompleteMftEntry {
     }
 
     pub fn bodyfile_lines_count(&self) -> usize {
-        return match &self.standard_info_timestamps {
+        (match &self.standard_info_timestamps {
             Some(_) => 1,
             None    => 0,
         }
@@ -420,7 +416,7 @@ impl CompleteMftEntry {
             None    => 0,
         }
         +
-        self.usnjrnl_records.len();
+        self.usnjrnl_records.len())
     }
 }
 

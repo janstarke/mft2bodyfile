@@ -56,7 +56,7 @@ impl Mft2BodyfileApplication {
 
     pub fn run(mut self) -> Result<()> {
         self.parse_options()?;
-        let task = Mft2BodyfileTask::new()
+        let task = Mft2BodyfileTask::default()
             .with_mft_file(self.mft_file)
             .with_usnjrnl(self.usnjrnl)
             .with_usnjrnl_longflags(self.usnjrnl_longflags)

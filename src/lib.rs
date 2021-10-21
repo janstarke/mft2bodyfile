@@ -16,8 +16,8 @@ pub struct Mft2BodyfileTask {
     output: Option<Box<dyn Write>>
 }
 
-impl Mft2BodyfileTask {
-    pub fn new() -> Self {
+impl Default for Mft2BodyfileTask {
+    fn default() -> Self {
         Self {
             mft_file: PathBuf::new(),
             usnjrnl: None,
@@ -26,7 +26,9 @@ impl Mft2BodyfileTask {
             output: None,
         }
     }
+}
 
+impl Mft2BodyfileTask {
     pub fn with_mft_file(mut self, mft_file: PathBuf) -> Self {
         self.mft_file = mft_file;
         self
@@ -53,9 +55,11 @@ impl Mft2BodyfileTask {
     }
 
     pub fn fill_preprocessed_mft<T>(mut parser: MftParser<T>, bar: Option<ProgressBar>) -> PreprocessedMft where T: std::io::Read + std::io::Seek{
-        let mut pp = PreprocessedMft::new();
+        let mut pp = PreprocessedMft::default();
         for mft_entry in parser.iter_entries().filter_map(Result::ok) {
-            let _ = bar.as_ref().and_then(|b|{b.inc(1); Some(b)});
+            if let Some(b) = bar.as_ref() {
+                b.inc(1);
+            }
             
             if (12..24).contains(&mft_entry.header.record_number) {
                 //
@@ -76,7 +80,9 @@ impl Mft2BodyfileTask {
                 pp.add_entry(mft_entry);
             }
         }
-        let _ = bar.as_ref().and_then(|b|{b.finish(); Some(b)});
+        if let Some(b) = bar.as_ref() {
+            b.finish();
+        }
         pp
     }
 
@@ -87,7 +93,7 @@ impl Mft2BodyfileTask {
         let usnjrnl_thread = std::thread::spawn(|| {
             match usnjrnl_path {
                 Some(jrnl_path) => UsnJrnl::from(UsnJrnlReader::from(&jrnl_path).unwrap()),
-                None => UsnJrnl::new()
+                None => UsnJrnl::default()
             }
         });
         
@@ -96,7 +102,7 @@ impl Mft2BodyfileTask {
         let mut pp = Self::fill_preprocessed_mft(parser, Some(bar));
 
         let usnjrnl = usnjrnl_thread.join().unwrap();
-        if usnjrnl.len() > 0 {
+        if ! usnjrnl.is_empty() {
             let bar = self.new_progress_bar("merging $UsnJrnl entries", usnjrnl.len() as u64);
             for (reference, records) in usnjrnl.into_iter() {
                 pp.add_usnjrnl_records(reference, records);

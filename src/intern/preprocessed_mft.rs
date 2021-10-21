@@ -14,12 +14,15 @@ pub struct PreprocessedMft {
     complete_entries: HashMap<MftReference, CompleteMftEntry>
 }
 
-impl PreprocessedMft {
-    pub fn new() -> Self {
+impl Default for PreprocessedMft {
+    fn default() -> Self {
         Self {
             complete_entries: HashMap::new()
         }
     }
+}
+
+impl PreprocessedMft {
     pub fn add_entry(&mut self, entry: MftEntry) {
         let reference = MftReference::new(entry.header.record_number, entry.header.sequence);
 
