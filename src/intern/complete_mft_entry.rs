@@ -14,7 +14,7 @@ use usnjrnl::{CommonUsnRecord, UsnRecordData};
 /// a bodyfile line, which would be
 ///
 ///  - the base reference (needed to print the `inode` number)
-///  - the `$FILENAME` attribute. One file can have more than one `$FILENAME`
+///  - the `$FILE_NAME` attribute. One file can have more than one `$FILE_NAME`
 ///    attribbutes, but we store only one of them. We choose the right attribute
 ///    using the following priority:
 ///    
@@ -22,7 +22,7 @@ use usnjrnl::{CommonUsnRecord, UsnRecordData};
 ///    2. `Win32`
 ///    3. `POSIX`
 ///    4. ´DOS`
-///    If a file doesn't have a `$FILENAME` attribute, which may happen with already deleted files,
+///    If a file doesn't have a `$FILE_NAME` attribute, which may happen with already deleted files,
 ///    then a filename is being generated, but *not* stored in `file_name_attribute`
 ///
 ///    This attribute is required to display the filename, but also contains four timestamps,
@@ -282,7 +282,7 @@ impl CompleteMftEntry {
     fn format_fn(&self, mft: &PreprocessedMft) -> Option<String> {
         match self.file_name_attribute {
             Some(ref fn_attr) => {
-                let display_name = format!("{} ($FILENAME)", self.get_full_path(mft));
+                let display_name = format!("{} ($FILE_NAME)", self.get_full_path(mft));
                 Some(self.format(
                     &display_name,
                     fn_attr.timestamps().accessed(),
