@@ -1,14 +1,11 @@
 mod intern;
 
-use usnjrnl::*;
-use intern::*;
-use mft::MftParser;
+pub use intern::*;
 use std::path::PathBuf;
 use argparse::{ArgumentParser, Store, StoreTrue};
 use anyhow::Result;
 use simplelog::{TermLogger, LevelFilter, Config, TerminalMode, ColorChoice};
-use indicatif::{ProgressBar, ProgressStyle};
-use std::io::Write;
+use libmft2bodyfile::Mft2BodyfileTask;
 
 struct Mft2BodyfileApplication {
     mft_file: PathBuf,
@@ -57,73 +54,15 @@ impl Mft2BodyfileApplication {
         Ok(())
     }
 
-    fn new_progress_bar(&self, message: &'static str, count:u64) -> ProgressBar {
-        let bar = ProgressBar::new(count).with_message(message);
-        bar.set_style(ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>9}/{len:9}({percent}%) {msg}")
-            .progress_chars("##-"));
-        bar.set_draw_delta(1000);
-        bar
-    }
-
-    pub fn run(&mut self) -> Result<()> {
+    pub fn run(mut self) -> Result<()> {
         self.parse_options()?;
-
-        /* read $UsnJrnl */
-        let usnjrnl_path = self.usnjrnl.clone();
-        let usnjrnl_thread = std::thread::spawn(|| {
-            match usnjrnl_path {
-                Some(jrnl_path) => UsnJrnl::from(UsnJrnlReader::from(&jrnl_path).unwrap()),
-                None => UsnJrnl::new()
-            }
-        });
-        
-        let mut pp = PreprocessedMft::new();
-        let mut parser = MftParser::from_path(&self.mft_file).unwrap();
-        let bar = self.new_progress_bar("parsing $MFT entries", parser.get_entry_count());
-
-        for mft_entry in parser.iter_entries().filter_map(Result::ok) {
-            bar.inc(1);
-            
-            if (12..24).contains(&mft_entry.header.record_number) {
-                //
-                // ignore contents of $MFT extension entries
-                //
-                continue;
-            } else if mft_entry.header.used_entry_size == 0 {  
-                //
-                // ignore unallocated entries without content
-                //
-                if mft_entry.is_allocated() {
-                    log::info!("found allocated entry with zero entry size: {}", mft_entry.header.record_number);
-                }
-            } else {
-                //
-                // handle all other entries
-                //
-                pp.add_entry(mft_entry);
-            }
-        }
-        bar.finish();
-        let usnjrnl = usnjrnl_thread.join().unwrap();
-        if usnjrnl.len() > 0 {
-            let bar = self.new_progress_bar("merging $UsnJrnl entries", usnjrnl.len() as u64);
-            for (reference, records) in usnjrnl.into_iter() {
-                pp.add_usnjrnl_records(reference, records);
-                bar.inc(1);
-            }
-            bar.finish();
-        }
-
-        let bar = self.new_progress_bar("exporting bodyfile lines", pp.bodyfile_lines_count() as u64);
-        let stdout = std::io::stdout();
-        let mut stdout_lock = stdout.lock();
-        for entry in pp.iter_entries(self.usnjrnl_longflags) {
-            stdout_lock.write_all(entry.as_bytes())?;
-            bar.inc(1);
-        }
-        bar.finish();
-        Ok(())
+        let task = Mft2BodyfileTask::new()
+            .with_mft_file(self.mft_file)
+            .with_usnjrnl(self.usnjrnl)
+            .with_usnjrnl_longflags(self.usnjrnl_longflags)
+            .with_progressbar(true)
+            .with_output(Box::new(std::io::stdout()));
+        task.run()
     }
 }
 
@@ -133,6 +72,6 @@ fn main() -> Result<()> {
         Config::default(),
         TerminalMode::Stderr,
         ColorChoice::Auto);
-    let mut app = Mft2BodyfileApplication::new();
+    let app = Mft2BodyfileApplication::new();
     app.run()
 }

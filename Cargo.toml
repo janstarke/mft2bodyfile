@@ -7,6 +7,13 @@ description = "parses an $MFT file to bodyfile (stdout)"
 homepage = "https://www.github.com/janstarke/mft2bodyfile"
 license-file = "LICENSE"
 
+[lib]
+name = "libmft2bodyfile"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mft2bodyfile"
+path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -21,6 +28,9 @@ num = "0.4.0"
 indicatif = "0.16.2"
 
 usnjrnl = "0.1"
+
+[dev-dependencies]
+more-asserts = "0.2.1"
 
 #[profile.dev]
 #debug = true

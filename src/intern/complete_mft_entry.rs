@@ -181,7 +181,7 @@ impl CompleteMftEntry {
             if self.base_entry.entry == 5
             /* matchs the root entry */
             {
-                *self.full_path.borrow_mut() = String::from("");
+                *self.full_path.borrow_mut() = String::from("/");
                 return self.full_path.borrow().clone();
             }
 
@@ -196,7 +196,9 @@ impl CompleteMftEntry {
                             let parent_path = mft.get_full_path(p);
                             let mut fp = self.full_path.borrow_mut();
                             *fp = parent_path;
-                            fp.push('/');
+                            if ! &fp.ends_with("/") {
+                                fp.push('/');
+                            }
                             fp.push_str(name.filename());
                         }
                     }
@@ -216,7 +218,9 @@ impl CompleteMftEntry {
                             let parent_path = mft.get_full_path(&parent);
                             let mut fp = self.full_path.borrow_mut();
                             *fp = parent_path;
-                            fp.push('/');
+                            if ! &fp.ends_with("/") {
+                                fp.push('/');
+                            }
                             fp.push_str(&my_name);
                         }
                     };
