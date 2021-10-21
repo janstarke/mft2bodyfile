@@ -1,4 +1,4 @@
-use crate::intern::PreprocessedMft;
+use crate::intern::{PreprocessedMft, ParentFolderName};
 use crate::{FilenameInfo, TimestampTuple};
 use anyhow::Result;
 use likely_stable::unlikely;
@@ -35,7 +35,8 @@ pub struct CompleteMftEntry {
     standard_info_timestamps: Option<TimestampTuple>,
     full_path: RefCell<String>,
     is_allocated: bool,
-    usnjrnl_records: Vec<CommonUsnRecord>
+    deletion_status: RefCell<&'static str>,
+    usnjrnl_records: Vec<CommonUsnRecord>,
 }
 
 impl CompleteMftEntry {
@@ -47,6 +48,7 @@ impl CompleteMftEntry {
             full_path: RefCell::new(String::new()),
             is_allocated: entry.is_allocated(),
             usnjrnl_records: Vec::new(),
+            deletion_status: RefCell::new(if entry.is_allocated() {""} else {" (deleted)"} )
         };
         c.update_attributes(
             &entry,
@@ -66,6 +68,7 @@ impl CompleteMftEntry {
             full_path: RefCell::new(String::new()),
             is_allocated: false,
             usnjrnl_records: Vec::new(),
+            deletion_status: RefCell::new(" (deleted)")
         };
         c.add_nonbase_entry(entry);
         c
@@ -83,11 +86,16 @@ impl CompleteMftEntry {
             full_path: RefCell::new(String::new()),
             is_allocated: false,
             usnjrnl_records: records,
+            deletion_status: RefCell::new(" (deleted)")
         }
     }
 
     pub fn base_entry(&self) -> &MftReference {
         &self.base_entry
+    }
+
+    pub fn is_allocated(&self) -> bool {
+        self.is_allocated
     }
 
     pub fn set_base_entry(&mut self, entry_ref: MftReference, entry: MftEntry) {
@@ -176,6 +184,28 @@ impl CompleteMftEntry {
         }
     }
 
+    fn set_folder_name(&self, mft: &PreprocessedMft, parent: &MftReference, my_name: &str) {
+        assert_ne!(parent, &self.base_entry);
+        let mut fp = self.full_path.borrow_mut();
+
+
+
+        let parent_path = match mft.get_full_path(parent) {
+            ParentFolderName::MatchingSequenceNumber(s) => s,
+            ParentFolderName::IncrementedSequenceNumber(s) => {
+                assert_eq!(self.is_allocated(), false);
+                *(self.deletion_status.borrow_mut()) = " (deleted)";
+                s
+            }
+            ParentFolderName::NoMatchFound(s) => s
+        };
+        *fp = parent_path;
+        if ! &fp.ends_with("/") {
+            fp.push('/');
+        }
+        fp.push_str(my_name);
+    }
+
     pub fn get_full_path(&self, mft: &PreprocessedMft) -> String {
         if unlikely(self.full_path.borrow().is_empty()) {
             if self.base_entry.entry == 5
@@ -189,18 +219,7 @@ impl CompleteMftEntry {
                 Some(name) => {
                     match self.parent() {
                         None => *self.full_path.borrow_mut() = name.filename().clone(),
-                        Some(p) => {
-                            // prevent endless recursion, mainly for $MFT entry 5 (which is the root directory)
-                            assert_ne!(p, &self.base_entry);
-
-                            let parent_path = mft.get_full_path(p);
-                            let mut fp = self.full_path.borrow_mut();
-                            *fp = parent_path;
-                            if ! &fp.ends_with("/") {
-                                fp.push('/');
-                            }
-                            fp.push_str(name.filename());
-                        }
+                        Some(p) => self.set_folder_name(mft, p, name.filename())
                     }
                 }
                 None => {
@@ -214,15 +233,7 @@ impl CompleteMftEntry {
 
                     match self.parent_from_usnjrnl() {
                         None => *self.full_path.borrow_mut() = my_name,
-                        Some(parent) => {
-                            let parent_path = mft.get_full_path(&parent);
-                            let mut fp = self.full_path.borrow_mut();
-                            *fp = parent_path;
-                            if ! &fp.ends_with("/") {
-                                fp.push('/');
-                            }
-                            fp.push_str(&my_name);
-                        }
+                        Some(p) => self.set_folder_name(mft, &p, &my_name)
                     };
                 }
             }
@@ -261,7 +272,7 @@ impl CompleteMftEntry {
         let mode = String::from("0");
         let uid = String::from("0");
         let gid = String::from("0");
-        let status = if self.is_allocated { "" } else { " (deleted)" };
+        let status = self.deletion_status.borrow();
         let filesize = self.filesize();
         format!(
             "0|{}{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n",
@@ -334,15 +345,21 @@ impl CompleteMftEntry {
                     format!(" reason={}", data.Reason)
                 };
 
+                let parent_name = match mft.get_full_path(&data.ParentFileReferenceNumber) {
+                    ParentFolderName::MatchingSequenceNumber(s) => s,
+                    ParentFolderName::IncrementedSequenceNumber(s) => s,
+                    ParentFolderName::NoMatchFound(s) => s,
+                };
+
                 let parent_info = match &self.file_name_attribute {
                     Some(fni) => {
                         if fni.parent() != &data.ParentFileReferenceNumber {
-                            format!(" parent='{}'", mft.get_full_path(&data.ParentFileReferenceNumber))
+                            format!(" parent='{}'", parent_name)
                         } else {
                             "".to_owned()
                         }
                     }
-                    None => format!(" parent='{}'", mft.get_full_path(&data.ParentFileReferenceNumber))
+                    None => format!(" parent='{}'", parent_name)
                 };
 
                 let display_name = format!("{} ($UsnJrnl{}{}{})",

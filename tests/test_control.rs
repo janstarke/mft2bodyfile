@@ -58,8 +58,6 @@ fn get_parsed_mft() -> PreprocessedMft {
 
 #[test]
 fn test_root_entry() {
-    let mft_file = get_mft_file();
-
     let root_entries: Vec<ParsedBodyfileLine> = get_parsed_mft()
                         .iter_entries(false)
                         .map(|l| ParsedBodyfileLine::from(&l))

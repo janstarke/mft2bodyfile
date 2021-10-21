@@ -4,6 +4,12 @@ use winstructs::ntfs::mft_reference::MftReference;
 use crate::intern::CompleteMftEntry;
 use usnjrnl::CommonUsnRecord;
 
+pub enum ParentFolderName {
+    MatchingSequenceNumber(String),
+    IncrementedSequenceNumber(String),
+    NoMatchFound(String),
+}
+
 pub struct PreprocessedMft {
     complete_entries: HashMap<MftReference, CompleteMftEntry>
 }
@@ -58,11 +64,26 @@ impl PreprocessedMft {
         entry.header.base_reference.entry == 0 && entry.header.base_reference.sequence == 0
     }
 
-    pub fn get_full_path(&self, reference: &MftReference) -> String {
-        match self.complete_entries.get(reference) {
-            None => format!("deleted_parent_{}_{}", reference.entry, reference.sequence),
-            Some(entry) => entry.get_full_path(self),
+    pub fn get_full_path(&self, reference: &MftReference) -> ParentFolderName {
+        if let Some(entry) = self.complete_entries.get(reference) {
+            return ParentFolderName::MatchingSequenceNumber(entry.get_full_path(self));
         }
+
+        // let's see if the sequence number of the unallocated parent entry
+        // has already been incremented.
+        //
+        // This situation occurs if a folder is deleted which contains a file.
+        // Then, the file is also deleted, but its sequence number has not been
+        // updated.
+        let deleted_ref = MftReference::new(reference.entry, reference.sequence + 1);
+        if let Some(entry) = self.complete_entries.get(&deleted_ref) {
+            if ! entry.is_allocated() {
+                return ParentFolderName::IncrementedSequenceNumber(entry.get_full_path(self));
+            }
+        }
+
+        ParentFolderName::NoMatchFound(
+            format!("deleted_parent_{}_{}", reference.entry, reference.sequence))
     }
 
     pub fn bodyfile_lines_count(&self) -> usize {
