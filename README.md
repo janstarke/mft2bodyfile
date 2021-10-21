@@ -1,4 +1,6 @@
-[![Crate](https://img.shields.io/crates/v/mft2bodyfile.svg)](https://crates.io/crates/mft2bodyfile) ![Crates.io (latest)](https://img.shields.io/crates/dv/mft2bodyfile)
+[![Crate](https://img.shields.io/crates/v/mft2bodyfile.svg)](https://crates.io/crates/mft2bodyfile)
+![Crates.io (latest)](https://img.shields.io/crates/dv/mft2bodyfile)
+![Coveralls](https://img.shields.io/coveralls/github/janstarke/mft2bodyfile)
 
 # mft2bodyfile
 parses an $MFT file (and optionally the corresponding `$UsnJrnl`) to bodyfile
