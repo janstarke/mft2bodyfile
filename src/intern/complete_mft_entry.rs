@@ -1,4 +1,4 @@
-use crate::intern::{PreprocessedMft, ParentFolderName};
+use crate::intern::{PreprocessedMft};
 use crate::{FilenameInfo, TimestampTuple};
 use anyhow::Result;
 use likely_stable::unlikely;
@@ -188,18 +188,9 @@ impl CompleteMftEntry {
         assert_ne!(parent, &self.base_entry);
         let mut fp = self.full_path.borrow_mut();
 
+        let parent_info = mft.get_full_path(parent);
 
-
-        let parent_path = match mft.get_full_path(parent) {
-            ParentFolderName::MatchingSequenceNumber(s) => s,
-            ParentFolderName::IncrementedSequenceNumber(s) => {
-                assert!(! self.is_allocated());
-                *(self.deletion_status.borrow_mut()) = " (deleted)";
-                s
-            }
-            ParentFolderName::NoMatchFound(s) => s
-        };
-        *fp = parent_path;
+        *fp = parent_info.full_path;
         if ! &fp.ends_with('/') {
             fp.push('/');
         }
@@ -341,21 +332,26 @@ impl CompleteMftEntry {
                     format!(" reason={}", data.Reason)
                 };
 
-                let parent_name = match mft.get_full_path(&data.ParentFileReferenceNumber) {
-                    ParentFolderName::MatchingSequenceNumber(s) => s,
-                    ParentFolderName::IncrementedSequenceNumber(s) => s,
-                    ParentFolderName::NoMatchFound(s) => s,
-                };
-
-                let parent_info = match &self.file_name_attribute {
-                    Some(fni) => {
-                        if fni.parent() != &data.ParentFileReferenceNumber {
-                            format!(" parent='{}'", parent_name)
-                        } else {
+                let parent_info = mft.get_full_path(&data.ParentFileReferenceNumber);
+                let parent_info = match &parent_info.reference {
+                    Some(parent_ref) => {
+                        if parent_ref == &data.ParentFileReferenceNumber {
                             "".to_owned()
+                        } else if !parent_info.is_allocated &&
+                            parent_ref == &MftReference::new(
+                                data.ParentFileReferenceNumber.entry,
+                                data.ParentFileReferenceNumber.sequence+1) {
+                            "".to_owned()
+                        } else {
+                            format!(" parent={}-{}/{}-{}/'{}'",
+                                parent_ref.entry,
+                                parent_ref.sequence,
+                                data.ParentFileReferenceNumber.entry,
+                                data.ParentFileReferenceNumber.sequence,
+                                parent_info.full_path)
                         }
                     }
-                    None => format!(" parent='{}'", parent_name)
+                    None => format!(" parent='{}'", parent_info.full_path)
                 };
 
                 let display_name = format!("{} ($UsnJrnl{}{}{})",

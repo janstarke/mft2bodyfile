@@ -4,10 +4,10 @@ use winstructs::ntfs::mft_reference::MftReference;
 use crate::intern::CompleteMftEntry;
 use usnjrnl::CommonUsnRecord;
 
-pub enum ParentFolderName {
-    MatchingSequenceNumber(String),
-    IncrementedSequenceNumber(String),
-    NoMatchFound(String),
+pub struct ParentInfo {
+    pub full_path: String,
+    pub is_allocated: bool,
+    pub reference: Option<MftReference>
 }
 
 pub struct PreprocessedMft {
@@ -67,26 +67,32 @@ impl PreprocessedMft {
         entry.header.base_reference.entry == 0 && entry.header.base_reference.sequence == 0
     }
 
-    pub fn get_full_path(&self, reference: &MftReference) -> ParentFolderName {
+    pub fn get_full_path(&self, reference: &MftReference) -> ParentInfo {
         if let Some(entry) = self.complete_entries.get(reference) {
-            return ParentFolderName::MatchingSequenceNumber(entry.get_full_path(self));
-        }
-
-        // let's see if the sequence number of the unallocated parent entry
-        // has already been incremented.
-        //
-        // This situation occurs if a folder is deleted which contains a file.
-        // Then, the file is also deleted, but its sequence number has not been
-        // updated.
-        let deleted_ref = MftReference::new(reference.entry, reference.sequence + 1);
-        if let Some(entry) = self.complete_entries.get(&deleted_ref) {
-            if ! entry.is_allocated() {
-                return ParentFolderName::IncrementedSequenceNumber(entry.get_full_path(self));
+            return ParentInfo {
+                full_path: entry.get_full_path(self),
+                is_allocated: entry.is_allocated(),
+                reference: Some(*reference)
             }
         }
 
-        ParentFolderName::NoMatchFound(
-            format!("deleted_parent_{}_{}", reference.entry, reference.sequence))
+        // if the parent folder was already deleted, the sequence number is incremented
+        let deleted_ref = MftReference::new(reference.entry, reference.sequence + 1);
+        if let Some(entry) = self.complete_entries.get(&deleted_ref) {
+            if ! entry.is_allocated() {
+                return ParentInfo {
+                    full_path: entry.get_full_path(self),
+                    is_allocated: entry.is_allocated(),
+                    reference: Some(deleted_ref)
+                }
+            }
+        }
+
+        return ParentInfo {
+            full_path: format!("deleted_parent_{}_{}", reference.entry, reference.sequence),
+            is_allocated: false,
+            reference: None
+        }
     }
 
     pub fn bodyfile_lines_count(&self) -> usize {
