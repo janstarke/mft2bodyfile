@@ -1,6 +1,6 @@
 [package]
 name = "mft2bodyfile"
-version = "0.6.5"
+version = "0.6.6"
 authors = ["Jan Starke <Jan.Starke@t-systems.com>"]
 edition = "2018"
 description = "parses an $MFT file to bodyfile (stdout)"
@@ -20,7 +20,7 @@ path = "src/main.rs"
 mft = "0.5.3"
 winstructs = "0.3.0"
 anyhow = "1.0.40"
-argparse = "0.2.2"
+clap = "2"
 simplelog = "0.10.0"
 likely_stable = "0.1.2"
 log = "0.4.14"

@@ -7,13 +7,19 @@ use std::path::PathBuf;
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::Write;
+use std::fs::File;
+
+pub enum BodyfileSink {
+    Stdout,
+    File(File)
+}
 
 pub struct Mft2BodyfileTask {
     mft_file: PathBuf,
     usnjrnl: Option<PathBuf>,
     usnjrnl_longflags: bool,
     with_progressbar: bool,
-    output: Option<Box<dyn Write>>
+    output: BodyfileSink
 }
 
 impl Default for Mft2BodyfileTask {
@@ -23,7 +29,7 @@ impl Default for Mft2BodyfileTask {
             usnjrnl: None,
             usnjrnl_longflags: false,
             with_progressbar: false,
-            output: None,
+            output: BodyfileSink::Stdout,
         }
     }
 }
@@ -49,8 +55,8 @@ impl Mft2BodyfileTask {
         self
     }
 
-    pub fn with_output(mut self, output: Box<dyn Write>) -> Self {
-        self.output = Some(output);
+    pub fn with_output(mut self, output: BodyfileSink) -> Self {
+        self.output = output;
         self
     }
 
@@ -113,7 +119,10 @@ impl Mft2BodyfileTask {
 
         let bar = &self.new_progress_bar("exporting bodyfile lines", pp.bodyfile_lines_count() as u64);
         let stdout = std::io::stdout();
-        let mut stdout_lock = stdout.lock();
+        let mut stdout_lock: Box<dyn Write> = match self.output {
+            BodyfileSink::Stdout     => Box::new(stdout.lock()),
+            BodyfileSink::File(file) => Box::new(file)
+        };
         for entry in pp.iter_entries(self.usnjrnl_longflags) {
             stdout_lock.write_all(entry.as_bytes())?;
             bar.inc(1);

@@ -2,14 +2,16 @@ mod intern;
 
 pub use intern::*;
 use std::path::PathBuf;
-use argparse::{ArgumentParser, Store, StoreTrue};
+use clap::{App, Arg};
 use anyhow::Result;
 use simplelog::{TermLogger, LevelFilter, Config, TerminalMode, ColorChoice};
-use libmft2bodyfile::Mft2BodyfileTask;
+use libmft2bodyfile::{Mft2BodyfileTask, BodyfileSink};
+use std::fs::File;
 
 struct Mft2BodyfileApplication {
     mft_file: PathBuf,
     usnjrnl: Option<PathBuf>,
+    output: BodyfileSink,
     usnjrnl_longflags: bool,
 }
 
@@ -18,24 +20,46 @@ impl Mft2BodyfileApplication {
         Self {
             mft_file: PathBuf::new(),
             usnjrnl: None,
+            output: BodyfileSink::Stdout,
             usnjrnl_longflags: false
         }
     }
 
     fn parse_options(&mut self) -> Result<()> {
-        let mut filename = String::new();
-        let mut usnjrnl_file = String::new();
-        let mut usnjrnl_longflags = false;
-        {
-            let mut ap = ArgumentParser::new();
-            ap.set_description("parses an $MFT file to bodyfile (stdout)");
-            ap.refer(&mut filename).add_argument("mft_file", Store, "path to $MFT").required();
-            ap.refer(&mut usnjrnl_file).add_option(&["-J", "--journal"], Store, "path to $UsnJrnl $J file (optional)");
-            ap.refer(&mut usnjrnl_longflags).add_option(&["--journal-long-flags"], StoreTrue, "don't remove the USN_REASON_ prefix from the $UsnJrnl reason output");
-            ap.parse_args_or_exit();
-        }
-        self.usnjrnl_longflags = usnjrnl_longflags;
-    
+        let app = App::new(env!("CARGO_PKG_NAME"))
+            .version(env!("CARGO_PKG_VERSION"))
+            .author(env!("CARGO_PKG_AUTHORS"))
+            .about(env!("CARGO_PKG_DESCRIPTION"))
+            .arg(
+                Arg::with_name("MFT_FILE")
+                    .help("path to $MFT")
+                    .required(true)
+                    .multiple(false)
+                    .takes_value(true),
+            )
+            .arg(
+                Arg::with_name("journal")
+                    .short("J").long("journal")
+                    .help("path to $UsnJrnl $J file (optional)")
+                    .takes_value(true)
+                    .number_of_values(1)
+            )
+            .arg(
+                Arg::with_name("journal-long-flags")
+                    .long("journal-long-flags")
+                    .help("don't remove the USN_REASON_ prefix from the $UsnJrnl reason output")
+            )
+            .arg(
+                Arg::with_name("output")
+                .short("O").long("output")
+                .help("name of destination file (or '-' to write to stdout)")
+                .takes_value(true)
+                .number_of_values(1)
+            );
+        let matches = app.get_matches();
+        self.usnjrnl_longflags = matches.is_present("journal-long-flags");
+        let filename = matches.value_of("MFT_FILE").expect("missing $MFT filename");
+
         let fp = PathBuf::from(&filename);
         if ! (fp.exists() && fp.is_file()) {
             return Err(anyhow::Error::msg(format!("File {} does not exist", &filename)));
@@ -43,14 +67,21 @@ impl Mft2BodyfileApplication {
             self.mft_file = fp;
         }
 
-        if ! usnjrnl_file.is_empty() {
-            let fp = PathBuf::from(&usnjrnl_file);
+        if let Some(usnjrnl_filename) = matches.value_of("journal") {
+            let fp = PathBuf::from(&usnjrnl_filename);
             if ! (fp.exists() && fp.is_file()) {
                 return Err(anyhow::Error::msg(format!("File {} does not exist", &filename)));
             } else {
                 self.usnjrnl = Some(fp);
             }
         }
+
+        if let Some(output) = matches.value_of("output") {
+            if output != "-" {
+                self.output = BodyfileSink::File(File::create(&output)?);
+            }
+        }
+
         Ok(())
     }
 
@@ -61,7 +92,7 @@ impl Mft2BodyfileApplication {
             .with_usnjrnl(self.usnjrnl)
             .with_usnjrnl_longflags(self.usnjrnl_longflags)
             .with_progressbar(true)
-            .with_output(Box::new(std::io::stdout()));
+            .with_output(self.output);
         task.run()
     }
 }
