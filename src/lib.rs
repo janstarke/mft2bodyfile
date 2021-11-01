@@ -127,6 +127,7 @@ impl Mft2BodyfileTask {
             stdout_lock.write_all(entry.as_bytes())?;
             bar.inc(1);
         }
+        stdout_lock.flush()?;
         bar.finish();
         Ok(())
     }
