@@ -14,19 +14,20 @@ cargo install mft2bodyfile
 ## Usage
 
 ```
-Usage:
-  mft2bodyfile [OPTIONS] MFT_FILE
+USAGE:
+    mft2bodyfile [FLAGS] [OPTIONS] <MFT_FILE>
 
-parses an $MFT file to bodyfile (stdout)
+FLAGS:
+    -h, --help                  Prints help information
+        --journal-long-flags    don't remove the USN_REASON_ prefix from the $UsnJrnl reason output
+    -V, --version               Prints version information
 
-Positional arguments:
-  mft_file              path to $MFT
+OPTIONS:
+    -J, --journal <journal>    path to $UsnJrnl $J file (optional)
+    -O, --output <output>      name of destination file (or '-' to write to stdout)
 
-Optional arguments:
-  -h,--help             Show this help message and exit
-  -J,--journal JOURNAL  path to $UsnJrnl $J file (optional)
-  --journal-long-flags  don't remove the USN_REASON_ prefix from the $UsnJrnl
-                        reason output
+ARGS:
+    <MFT_FILE>    path to $MFT
 ```
 
 ## Example
