@@ -63,15 +63,7 @@ impl CompleteMftEntry {
             indexroot_attributes: Vec::new(),
             is_directory: entry.is_dir()
         };
-        c.update_attributes(
-            &entry,
-            vec![
-                MftAttributeType::StandardInformation,
-                MftAttributeType::FileName,
-                MftAttributeType::DATA,
-                MftAttributeType::IndexRoot,
-            ],
-        );
+        c.update_attributes(&entry);
         c
     }
 
@@ -122,24 +114,13 @@ impl CompleteMftEntry {
     pub fn set_base_entry(&mut self, entry_ref: MftReference, entry: MftEntry) {
         assert_eq!(self.base_entry, entry_ref);
 
-        self.update_attributes(
-            &entry,
-            vec![
-                MftAttributeType::StandardInformation,
-                MftAttributeType::FileName,
-                MftAttributeType::DATA,
-                MftAttributeType::IndexRoot,
-            ],
-        );
+        self.update_attributes(&entry);
         self.is_allocated = entry.is_allocated();
         self.is_directory = entry.is_dir();
     }
 
     pub fn add_nonbase_entry(&mut self, e: MftEntry) {
-        self.update_attributes(&e, vec![
-            MftAttributeType::FileName,
-            MftAttributeType::DATA,
-            MftAttributeType::IndexRoot,]);
+        self.update_attributes(&e);
     }
 
     pub fn add_usnjrnl_records(&mut self, records: Vec<CommonUsnRecord>) {let mut records = records;
@@ -153,7 +134,7 @@ impl CompleteMftEntry {
         }
     }
 
-    fn update_attributes(&mut self, entry: &MftEntry, attribute_types: Vec<MftAttributeType>) {
+    fn update_attributes(&mut self, entry: &MftEntry) {
         /*
             do nothing if we already have all attributes
         */
@@ -168,7 +149,12 @@ impl CompleteMftEntry {
         }
 
         for attr_result in entry
-            .iter_attributes_matching(Some(attribute_types))
+            .iter_attributes_matching(Some(vec![
+                MftAttributeType::StandardInformation,
+                MftAttributeType::FileName,
+                MftAttributeType::DATA,
+                MftAttributeType::IndexRoot,
+            ]))
             .filter_map(Result::ok)
         {
             if attr_result.header.type_code == MftAttributeType::IndexRoot {
