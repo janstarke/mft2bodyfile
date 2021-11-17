@@ -1,6 +1,8 @@
 
 use mft::attribute::x10::StandardInfoAttr;
 use mft::attribute::x30::FileNameAttr;
+use chrono::{DateTime, Utc};
+use std::cmp;
 
 pub struct TimestampTuple {
     accessed: i64,
@@ -9,13 +11,20 @@ pub struct TimestampTuple {
     created: i64,
 }
 
+impl TimestampTuple {
+    fn win32_to_unix_timestamp(win32_ts: &DateTime<Utc>) -> i64 {
+        /* any values below 0 cannot be used as unix timestamp */
+        cmp::max(0, win32_ts.timestamp())
+    }
+}
+
 impl From<&FileNameAttr> for TimestampTuple {
     fn from(attr: &FileNameAttr) -> TimestampTuple {
         TimestampTuple {
-            accessed: attr.accessed.timestamp(),
-            mft_modified: attr.mft_modified.timestamp(),
-            modified: attr.modified.timestamp(),
-            created: attr.created.timestamp()
+            accessed: Self::win32_to_unix_timestamp(&attr.accessed),
+            mft_modified: Self::win32_to_unix_timestamp(&attr.mft_modified),
+            modified: Self::win32_to_unix_timestamp(&attr.modified),
+            created: Self::win32_to_unix_timestamp(&attr.created)
         }
     }
 }
@@ -24,10 +33,10 @@ impl From<&FileNameAttr> for TimestampTuple {
 impl From<&StandardInfoAttr> for TimestampTuple {
     fn from(attr: &StandardInfoAttr) -> TimestampTuple {
         TimestampTuple {
-            accessed: attr.accessed.timestamp(),
-            mft_modified: attr.mft_modified.timestamp(),
-            modified: attr.modified.timestamp(),
-            created: attr.created.timestamp()
+            accessed: Self::win32_to_unix_timestamp(&attr.accessed),
+            mft_modified: Self::win32_to_unix_timestamp(&attr.mft_modified),
+            modified: Self::win32_to_unix_timestamp(&attr.modified),
+            created: Self::win32_to_unix_timestamp(&attr.created)
         }
     }
 }

@@ -7,6 +7,7 @@ use mft::MftEntry;
 use std::cell::RefCell;
 use winstructs::ntfs::mft_reference::MftReference;
 use usnjrnl::{CommonUsnRecord, UsnRecordData};
+use bodyfile::Bodyfile3Line;
 
 ///
 /// Represents the set of all $MFT entries that make up a files metadata.
@@ -254,56 +255,38 @@ impl CompleteMftEntry {
 
     fn format(
         &self,
-        display_name: &str,
-        atime: i64,
-        mtime: i64,
-        ctime: i64,
-        crtime: i64,
+        display_name: String,
+        timestamps: &TimestampTuple
     ) -> String {
-        let mode = String::from("0");
-        let uid = String::from("0");
-        let gid = String::from("0");
-        let status = self.deletion_status.borrow();
-        let filesize = self.filesize();
-        format!(
-            "0|{}{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n",
-            display_name,
-            status,
-            &self.base_entry().entry.to_string(),
-            mode,
-            uid,
-            gid,
-            filesize,
-            atime,
-            mtime,
-            ctime,
-            crtime
-        )
+        Bodyfile3Line::new()
+            .with_owned_name(format!("{}{}",
+                display_name,
+                self.deletion_status.borrow()))
+            .with_owned_inode(self.base_entry().entry.to_string())
+            .with_size(self.filesize())
+            .with_atime(timestamps.accessed())
+            .with_mtime(timestamps.mft_modified())
+            .with_ctime(timestamps.modified())
+            .with_crtime(timestamps.created())
+            .to_string()
     }
 
     fn format_fn(&self, mft: &PreprocessedMft) -> Option<String> {
-        match self.file_name_attribute {
-            Some(ref fn_attr) => {
-                let display_name = format!("{} ($FILE_NAME)", self.get_full_path(mft));
-                Some(self.format(
-                    &display_name,
-                    fn_attr.timestamps().accessed(),
-                    fn_attr.timestamps().mft_modified(),
-                    fn_attr.timestamps().modified(),
-                    fn_attr.timestamps().created(),
-                ))
-            }
-            None => None,
-        }
+        self.file_name_attribute.as_ref().and_then(|fn_attr|
+            Some(self.format(
+                    format!("{} ($FILE_NAME)", self.get_full_path(mft)),
+                    fn_attr.timestamps()
+            )
+        ))
     }
 
     fn format_si(&self, mft: &PreprocessedMft) -> Option<String> {
-        self.standard_info_timestamps.as_ref().map(|si| self.format(
-            &self.get_full_path(mft),
-            si.accessed(),
-            si.mft_modified(),
-            si.modified(),
-            si.created()))
+        self.standard_info_timestamps.as_ref().and_then(|si|
+            Some(self.format(
+                    self.get_full_path(mft),
+                    si
+            )
+        ))
     }
 
     /// returns the filename stored in the `$MFT`, if any, or None
@@ -360,7 +343,10 @@ impl CompleteMftEntry {
                         parent_info,
                         reason_info);
                 let timestamp = data.TimeStamp.timestamp();
-                self.format(&display_name, timestamp, timestamp, timestamp, timestamp)
+                Bodyfile3Line::new()
+                    .with_owned_name(display_name)
+                    .with_atime(timestamp)
+                    .to_string()
             }
         }
     }
