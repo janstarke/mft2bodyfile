@@ -135,19 +135,7 @@ impl CompleteMftEntry {
     }
 
     fn update_attributes(&mut self, entry: &MftEntry) {
-        /*
-            do nothing if we already have all attributes
-        */
-        if self.standard_info_timestamps.is_some() {
-            if let Some(filename_info) = &self.file_name_attribute {
-                if filename_info.is_final() {
-                    if !self.indexroot_attributes.is_empty() || !self.data_attributes.is_empty() {
-                        return;
-                    }
-                }
-            }
-        }
-
+        
         for attr_result in entry
             .iter_attributes_matching(Some(vec![
                 MftAttributeType::StandardInformation,
