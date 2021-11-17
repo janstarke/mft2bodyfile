@@ -29,12 +29,8 @@ fn test_root_entry() {
     let root_entries: Vec<Bodyfile3Line> = get_parsed_mft()
                         .iter_entries(false)
                         .map(|l| Bodyfile3Line::try_from(l.as_ref()).expect(l.as_ref()))
-                        .filter(|l| l.get_inode() == "5")
+                        .filter(|l| l.get_inode().starts_with("5-"))
                         .collect();
-    
-    //for f in get_parsed_mft().iter_entries(false) {
-    //    eprintln!("ENTRY: {}", f);
-    //}
 
     assert_ge!(root_entries.len(), 1);
     assert_le!(root_entries.len(), 4);

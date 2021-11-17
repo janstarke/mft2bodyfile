@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use winstructs::ntfs::mft_reference::MftReference;
 use usnjrnl::{CommonUsnRecord, UsnRecordData};
 use bodyfile::Bodyfile3Line;
+use num::ToPrimitive;
 
 ///
 /// Represents the set of all $MFT entries that make up a files metadata.
@@ -38,6 +39,14 @@ pub struct CompleteMftEntry {
     is_allocated: bool,
     deletion_status: RefCell<&'static str>,
     usnjrnl_records: Vec<CommonUsnRecord>,
+    data_attributes: Vec<DataAttribute>,
+    indexroot_attributes: Vec<u16>,
+    is_directory: bool
+}
+
+pub struct DataAttribute {
+    name: Option<String>,
+    instance: u16
 }
 
 impl CompleteMftEntry {
@@ -49,13 +58,18 @@ impl CompleteMftEntry {
             full_path: RefCell::new(String::new()),
             is_allocated: entry.is_allocated(),
             usnjrnl_records: Vec::new(),
-            deletion_status: RefCell::new(if entry.is_allocated() {""} else {" (deleted)"} )
+            deletion_status: RefCell::new(if entry.is_allocated() {""} else {" (deleted)"} ),
+            data_attributes: Vec::new(),
+            indexroot_attributes: Vec::new(),
+            is_directory: entry.is_dir()
         };
         c.update_attributes(
             &entry,
             vec![
                 MftAttributeType::StandardInformation,
                 MftAttributeType::FileName,
+                MftAttributeType::DATA,
+                MftAttributeType::IndexRoot,
             ],
         );
         c
@@ -69,7 +83,10 @@ impl CompleteMftEntry {
             full_path: RefCell::new(String::new()),
             is_allocated: false,
             usnjrnl_records: Vec::new(),
-            deletion_status: RefCell::new(" (deleted)")
+            deletion_status: RefCell::new(" (deleted)"),
+            data_attributes: Vec::new(),
+            indexroot_attributes: Vec::new(),
+            is_directory: false
         };
         c.add_nonbase_entry(entry);
         c
@@ -87,7 +104,10 @@ impl CompleteMftEntry {
             full_path: RefCell::new(String::new()),
             is_allocated: false,
             usnjrnl_records: records,
-            deletion_status: RefCell::new(" (deleted)")
+            deletion_status: RefCell::new(" (deleted)"),
+            data_attributes: Vec::new(),
+            indexroot_attributes: Vec::new(),
+            is_directory: false
         }
     }
 
@@ -107,13 +127,19 @@ impl CompleteMftEntry {
             vec![
                 MftAttributeType::StandardInformation,
                 MftAttributeType::FileName,
+                MftAttributeType::DATA,
+                MftAttributeType::IndexRoot,
             ],
         );
         self.is_allocated = entry.is_allocated();
+        self.is_directory = entry.is_dir();
     }
 
     pub fn add_nonbase_entry(&mut self, e: MftEntry) {
-        self.update_attributes(&e, vec![MftAttributeType::FileName]);
+        self.update_attributes(&e, vec![
+            MftAttributeType::FileName,
+            MftAttributeType::DATA,
+            MftAttributeType::IndexRoot,]);
     }
 
     pub fn add_usnjrnl_records(&mut self, records: Vec<CommonUsnRecord>) {let mut records = records;
@@ -134,7 +160,9 @@ impl CompleteMftEntry {
         if self.standard_info_timestamps.is_some() {
             if let Some(filename_info) = &self.file_name_attribute {
                 if filename_info.is_final() {
-                    return;
+                    if !self.indexroot_attributes.is_empty() || !self.data_attributes.is_empty() {
+                        return;
+                    }
                 }
             }
         }
@@ -143,6 +171,19 @@ impl CompleteMftEntry {
             .iter_attributes_matching(Some(attribute_types))
             .filter_map(Result::ok)
         {
+            if attr_result.header.type_code == MftAttributeType::IndexRoot {
+                self.indexroot_attributes.push(attr_result.header.instance);
+                continue;
+            } else if attr_result.header.type_code == MftAttributeType::DATA {
+                self.data_attributes.push(
+                    DataAttribute {
+                        name: attr_result.header.name_offset.and(Some(attr_result.header.name)),
+                        instance: attr_result.header.instance
+                    }
+                );
+                continue;
+            }
+
             match attr_result.data {
                 MftAttributeContent::AttrX10(standard_info_attribute) => {
                     if self.standard_info_timestamps.is_none() {
@@ -152,19 +193,14 @@ impl CompleteMftEntry {
                         panic!("multiple standard information attributes found")
                     }
                 }
-                /*
-                MftAttributeContent::AttrX20(attribute_list) => {
-                    for attr_entry in attribute_list.entries {
-                        if attr_entry.attribute_type == 0x10
-                    }
-                }*/
+
                 MftAttributeContent::AttrX30(file_name_attribute) => {
                     match self.file_name_attribute {
                         None => {
                             self.file_name_attribute =
-                                Some(FilenameInfo::from(&file_name_attribute))
+                                Some(FilenameInfo::from(&file_name_attribute, &attr_result.header))
                         }
-                        Some(ref mut name_attr) => name_attr.update(&file_name_attribute),
+                        Some(ref mut name_attr) => name_attr.update(&file_name_attribute, &attr_result.header),
                     }
 
                     if let Some(file_name_attribute) = &self.file_name_attribute {
@@ -256,13 +292,18 @@ impl CompleteMftEntry {
     fn format(
         &self,
         display_name: String,
-        timestamps: &TimestampTuple
+        timestamps: &TimestampTuple,
+        attribute_id: u32,
+        instance_id: u16
     ) -> String {
         Bodyfile3Line::new()
             .with_owned_name(format!("{}{}",
                 display_name,
                 self.deletion_status.borrow()))
-            .with_owned_inode(self.base_entry().entry.to_string())
+            .with_owned_inode(format!("{}-{}-{}",
+                self.base_entry().entry.to_string(),
+                attribute_id,
+                instance_id))
             .with_size(self.filesize())
             .with_atime(timestamps.accessed())
             .with_mtime(timestamps.mft_modified())
@@ -275,19 +316,26 @@ impl CompleteMftEntry {
         self.file_name_attribute.as_ref().and_then(|fn_attr|
             Some(self.format(
                     format!("{} ($FILE_NAME)", self.get_full_path(mft)),
-                    fn_attr.timestamps()
+                    fn_attr.timestamps(),
+                    MftAttributeType::FileName.to_u32().unwrap(),
+                    fn_attr.instance_id()
             )
         ))
     }
 
-    fn format_si(&self, mft: &PreprocessedMft) -> Option<String> {
+    fn format_si(&self, mft: &PreprocessedMft, 
+        attribute_id: u32,
+        instance_id: u16) -> Option<String> {
         self.standard_info_timestamps.as_ref().and_then(|si|
             Some(self.format(
                     self.get_full_path(mft),
-                    si
+                    si,
+                    attribute_id,
+                    instance_id
             )
         ))
     }
+
 
     /// returns the filename stored in the `$MFT`, if any, or None
     fn mft_filename(&self) -> Option<&String> {
@@ -377,8 +425,19 @@ impl CompleteMftEntry {
     }
 
     pub fn bodyfile_lines(&self, mft: &PreprocessedMft, usnjrnl_longflags: bool) -> BodyfileLines {
+        let attribute_id = if self.is_directory {
+            MftAttributeType::IndexRoot.to_u32().unwrap()
+        } else {
+            MftAttributeType::DATA.to_u32().unwrap()
+        };
+
+        //FIXME: obtain real instance id
+        let instance_id = 1;
+
         BodyfileLines {
-            standard_info: self.format_si(mft),
+           
+
+            standard_info: self.format_si(mft, attribute_id, instance_id),
             filename_info: self.format_fn(mft),
             usnjrnl_records: self.usnjrnl_records
                                     .iter()

@@ -125,6 +125,7 @@ impl Mft2BodyfileTask {
         };
         for entry in pp.iter_entries(self.usnjrnl_longflags) {
             stdout_lock.write_all(entry.as_bytes())?;
+            stdout_lock.write_all("\n".as_bytes())?;
             bar.inc(1);
         }
         stdout_lock.flush()?;
