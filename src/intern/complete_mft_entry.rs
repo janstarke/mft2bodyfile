@@ -9,6 +9,7 @@ use winstructs::ntfs::mft_reference::MftReference;
 use usnjrnl::{CommonUsnRecord, UsnRecordData};
 use bodyfile::Bodyfile3Line;
 use num::ToPrimitive;
+use std::cmp;
 
 ///
 /// Represents the set of all $MFT entries that make up a files metadata.
@@ -39,12 +40,12 @@ pub struct CompleteMftEntry {
     is_allocated: bool,
     deletion_status: RefCell<&'static str>,
     usnjrnl_records: Vec<CommonUsnRecord>,
-    data_attributes: Vec<DataAttribute>,
-    indexroot_attributes: Vec<u16>,
+    streams: Vec<StreamAttribute>,
     is_directory: bool
 }
 
-pub struct DataAttribute {
+pub struct StreamAttribute {
+    attribute_type: MftAttributeType,
     name: Option<String>,
     instance: u16
 }
@@ -59,8 +60,7 @@ impl CompleteMftEntry {
             is_allocated: entry.is_allocated(),
             usnjrnl_records: Vec::new(),
             deletion_status: RefCell::new(if entry.is_allocated() {""} else {" (deleted)"} ),
-            data_attributes: Vec::new(),
-            indexroot_attributes: Vec::new(),
+            streams: Vec::new(),
             is_directory: entry.is_dir()
         };
         c.update_attributes(&entry);
@@ -76,8 +76,7 @@ impl CompleteMftEntry {
             is_allocated: false,
             usnjrnl_records: Vec::new(),
             deletion_status: RefCell::new(" (deleted)"),
-            data_attributes: Vec::new(),
-            indexroot_attributes: Vec::new(),
+            streams: Vec::new(),
             is_directory: false
         };
         c.add_nonbase_entry(entry);
@@ -97,8 +96,7 @@ impl CompleteMftEntry {
             is_allocated: false,
             usnjrnl_records: records,
             deletion_status: RefCell::new(" (deleted)"),
-            data_attributes: Vec::new(),
-            indexroot_attributes: Vec::new(),
+            streams: Vec::new(),
             is_directory: false
         }
     }
@@ -145,16 +143,16 @@ impl CompleteMftEntry {
             ]))
             .filter_map(Result::ok)
         {
-            if attr_result.header.type_code == MftAttributeType::IndexRoot {
-                self.indexroot_attributes.push(attr_result.header.instance);
-                continue;
-            } else if attr_result.header.type_code == MftAttributeType::DATA {
-                self.data_attributes.push(
-                    DataAttribute {
+            //eprintln!("TYPE_CODE: {}", attr_result.header.type_code.to_u32().unwrap());
+
+            if attr_result.header.type_code == MftAttributeType::IndexRoot || attr_result.header.type_code == MftAttributeType::DATA
+            {
+                self.streams.push(
+                    StreamAttribute {
+                        attribute_type: attr_result.header.type_code,
                         name: attr_result.header.name_offset.and(Some(attr_result.header.name)),
                         instance: attr_result.header.instance
-                    }
-                );
+                    });
                 continue;
             }
 
@@ -175,12 +173,6 @@ impl CompleteMftEntry {
                                 Some(FilenameInfo::from(&file_name_attribute, &attr_result.header))
                         }
                         Some(ref mut name_attr) => name_attr.update(&file_name_attribute, &attr_result.header),
-                    }
-
-                    if let Some(file_name_attribute) = &self.file_name_attribute {
-                        if file_name_attribute.is_final() {
-                            return;
-                        }
                     }
                 }
                 _ => panic!("filter for iter_attributes_matching() isn't working"),
@@ -298,16 +290,21 @@ impl CompleteMftEntry {
     }
 
     fn format_si(&self, mft: &PreprocessedMft, 
+        stream_name: Option<&String>,
         attribute_id: u32,
         instance_id: u16) -> Option<String> {
-        self.standard_info_timestamps.as_ref().and_then(|si|
+        self.standard_info_timestamps.as_ref().and_then(|si| {
+            let name = match stream_name {
+                None    =>                  self.get_full_path(mft),
+                Some(n) => format!("{}:{}", self.get_full_path(mft), n)
+            };
             Some(self.format(
-                    self.get_full_path(mft),
+                    name,
                     si,
                     attribute_id,
                     instance_id
             )
-        ))
+        )})
     }
 
 
@@ -399,19 +396,29 @@ impl CompleteMftEntry {
     }
 
     pub fn bodyfile_lines(&self, mft: &PreprocessedMft, usnjrnl_longflags: bool) -> BodyfileLines {
-        let attribute_id = if self.is_directory {
-            MftAttributeType::IndexRoot.to_u32().unwrap()
-        } else {
-            MftAttributeType::DATA.to_u32().unwrap()
-        };
+        let mut lines: Vec<String> = Vec::new();
+        let display_stream_name = self.streams.len() > 1;
+        for d in self.streams.iter() {
+            let name = if display_stream_name {
+                d.name.as_ref()
+            } else {
+                None
+            };
 
-        //FIXME: obtain real instance id
-        let instance_id = 1;
+            if let Some(line) = self.format_si(mft, name, d.attribute_type.to_u32().unwrap(), d.instance) {
+                lines.push(line);
+            }
+        }
 
-        BodyfileLines {
-           
+        if lines.is_empty() {
+            if let Some(line) = self.format_si(mft, None, 0, 0) {
+                lines.push(line);
+            }
+        }
 
-            standard_info: self.format_si(mft, attribute_id, instance_id),
+        BodyfileLines {        
+
+            standard_info: lines,
             filename_info: self.format_fn(mft),
             usnjrnl_records: self.usnjrnl_records
                                     .iter()
@@ -422,7 +429,7 @@ impl CompleteMftEntry {
 
     pub fn bodyfile_lines_count(&self) -> usize {
         (match &self.standard_info_timestamps {
-            Some(_) => 1,
+            Some(_) => cmp::min(self.streams.len(), 1),
             None    => 0,
         }
         +
@@ -436,7 +443,7 @@ impl CompleteMftEntry {
 }
 
 pub struct BodyfileLines {
-    standard_info: Option<String>,
+    standard_info: Vec<String>,
     filename_info: Option<String>,
     usnjrnl_records: Vec<String>
 }
@@ -444,8 +451,8 @@ pub struct BodyfileLines {
 impl Iterator for BodyfileLines {
     type Item = String;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.standard_info.is_some() {
-            return self.standard_info.take();
+        if !self.standard_info.is_empty() {
+            return self.standard_info.pop();
         }
         if self.filename_info.is_some() {
             return self.filename_info.take();
