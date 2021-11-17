@@ -89,7 +89,7 @@ impl PreprocessedMft {
         }
 
         return ParentInfo {
-            full_path: format!("deleted_parent_{}_{}", reference.entry, reference.sequence),
+            full_path: format!("/$OrphanFiles"),
             is_allocated: false,
             reference: None
         }

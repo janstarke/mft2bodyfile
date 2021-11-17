@@ -397,13 +397,12 @@ impl CompleteMftEntry {
 
     pub fn bodyfile_lines(&self, mft: &PreprocessedMft, usnjrnl_longflags: bool) -> BodyfileLines {
         let mut lines: Vec<String> = Vec::new();
-        let display_stream_name = self.streams.len() > 1;
         for d in self.streams.iter() {
-            let name = if display_stream_name {
-                d.name.as_ref()
-            } else {
+
+            // hide default directory index name
+            let name = if d.attribute_type == MftAttributeType::IndexRoot && d.name == Some("$I30".to_owned()) {
                 None
-            };
+            } else { d.name.as_ref() };
 
             if let Some(line) = self.format_si(mft, name, d.attribute_type.to_u32().unwrap(), d.instance) {
                 lines.push(line);
