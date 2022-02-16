@@ -26,13 +26,24 @@ impl Mft2BodyfileApplication {
     }
 
     fn parse_options(&mut self) -> Result<()> {
+        let usnjrnl_help;
+        let mft2bodyfile_help;
+
+        if cfg!(feature = "gzip") {
+            usnjrnl_help = "path to $UsnJrnl:$J file (optional; file ending with .gz will be treated as being gzipped)";
+            mft2bodyfile_help = "path to $MFT (file ending with .gz will be treated as being gzipped)";
+        } else {
+            usnjrnl_help = "path to $UsnJrnl:$J file (optional)";
+            mft2bodyfile_help = "path to $MFT";
+        }
+
         let app = App::new(env!("CARGO_PKG_NAME"))
             .version(env!("CARGO_PKG_VERSION"))
             .author(env!("CARGO_PKG_AUTHORS"))
             .about(env!("CARGO_PKG_DESCRIPTION"))
             .arg(
                 Arg::with_name("MFT_FILE")
-                    .help("path to $MFT")
+                    .help(mft2bodyfile_help)
                     .required(true)
                     .multiple(false)
                     .takes_value(true),
@@ -40,7 +51,7 @@ impl Mft2BodyfileApplication {
             .arg(
                 Arg::with_name("journal")
                     .short("J").long("journal")
-                    .help("path to $UsnJrnl $J file (optional)")
+                    .help(usnjrnl_help)
                     .takes_value(true)
                     .number_of_values(1)
             )

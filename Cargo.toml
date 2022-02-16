@@ -1,6 +1,6 @@
 [package]
 name = "mft2bodyfile"
-version = "0.6.12"
+version = "0.7.0"
 authors = ["Jan Starke <Jan.Starke@t-systems.com>"]
 edition = "2018"
 description = "parses an $MFT file to bodyfile (stdout)"
@@ -10,6 +10,10 @@ license-file = "LICENSE"
 [lib]
 name = "libmft2bodyfile"
 path = "src/lib.rs"
+
+[features]
+default = ["gzip"]
+gzip = ["flate2"]
 
 [[bin]]
 name = "mft2bodyfile"
@@ -27,6 +31,7 @@ log = "0.4.14"
 num = "0.4.0"
 indicatif = "0.16.2"
 chrono = "0.4"
+flate2 = {version = "1.0.22", optional=true}
 
 usnjrnl = {version="0.4", default-features=false}
 bodyfile = "0.1"
