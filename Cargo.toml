@@ -1,6 +1,6 @@
 [package]
 name = "mft2bodyfile"
-version = "0.6.10"
+version = "0.6.11"
 authors = ["Jan Starke <Jan.Starke@t-systems.com>"]
 edition = "2018"
 description = "parses an $MFT file to bodyfile (stdout)"
@@ -28,7 +28,7 @@ num = "0.4.0"
 indicatif = "0.16.2"
 chrono = "0.4"
 
-usnjrnl = {version="0.3", default-features=false}
+usnjrnl = {version="0.4", default-features=false}
 bodyfile = "0.1"
 
 [dev-dependencies]
