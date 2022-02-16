@@ -32,8 +32,10 @@ num = "0.4.0"
 indicatif = "0.16.2"
 chrono = "0.4"
 flate2 = {version = "1.0.22", optional=true}
+buf_stream_reader = "0.2"
 
-usnjrnl = {version="0.4", default-features=false}
+usnjrnl = "0.4"
+
 bodyfile = "0.1"
 
 [dev-dependencies]

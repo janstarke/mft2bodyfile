@@ -1,13 +1,22 @@
 mod intern;
 use std::thread;
+use buf_stream_reader::BufStreamReader;
+use flate2::read::GzDecoder;
 use usnjrnl::*;
 pub use intern::*;
 use mft::MftParser;
 use std::path::PathBuf;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
-use std::io::Write;
+use std::io::{Write, ErrorKind, Read, BufReader};
 use std::fs::File;
+use std::convert::TryInto;
+
+enum ProgressBarType {
+    Spinner,
+    Bytes,
+    Count(u64)
+}
 
 pub enum BodyfileSink {
     Stdout,
@@ -87,7 +96,7 @@ impl Mft2BodyfileTask {
             }
         }
         if let Some(b) = bar.as_ref() {
-            b.finish();
+            b.finish_at_current_pos();
         }
         pp
     }
@@ -104,13 +113,54 @@ impl Mft2BodyfileTask {
         /* not to be mixed with MultiCar ;-) */
         let multi_bar = MultiProgress::new();
 
-        let parser = MftParser::from_path(&self.mft_file).unwrap();
-        let parser_bar = multi_bar.add(self.new_progress_bar("parsing $MFT entries", Some(parser.get_entry_count())));
-        let pp_thread = thread::spawn(move||
-            Self::fill_preprocessed_mft(parser, Some(parser_bar))
-        );
+        let pp_thread = 
+        if cfg!(feature="gzip") {
+            match self.mft_file.file_name() {
+                Some(filename) => {
+                    if filename.to_string_lossy().ends_with(".gz") {
+                        let file = File::open(&self.mft_file)?;
+                        let mut reader = BufReader::new(GzDecoder::new(file));
+                        let mut size = 0;
+                        let mut buffer = vec![0; 4096*4096];
 
-        let usnjrnl_bar = multi_bar.add(self.new_progress_bar("parsing $UsnJrnl:$J entries", None));
+                        /* calculate the size of the uncompressed data */
+                        let bar = self.new_progress_bar("obtaining size of uncompressed data", ProgressBarType::Bytes);
+                        loop {
+                            match reader.read(&mut buffer) {
+                                Ok(bytes) => {
+                                    if bytes == 0 { break }
+                                    else { size += bytes; bar.inc(bytes.try_into().unwrap());}
+                                }
+                                Err(why) => if why.kind() == ErrorKind::UnexpectedEof {
+                                    break;
+                                }
+                            }
+                        }
+                        bar.finish_and_clear();
+
+                        let file = File::open(&self.mft_file)?;
+                        let reader = BufStreamReader::new(GzDecoder::new(file), 4096);
+                        let parser = MftParser::from_read_seek(reader, Some(size.try_into().unwrap()))?;
+                        let parser_bar = multi_bar.add(self.new_progress_bar("parsing $MFT entries", ProgressBarType::Spinner));
+                        thread::spawn(move|| Self::fill_preprocessed_mft(parser, Some(parser_bar)))
+                    } else {
+                        let file = File::open(&self.mft_file)?;
+                        let parser = MftParser::from_read_seek(file, None).unwrap();
+                        let parser_bar = multi_bar.add(self.new_progress_bar("parsing $MFT entries", ProgressBarType::Count(parser.get_entry_count())));
+                        thread::spawn(move|| Self::fill_preprocessed_mft(parser, Some(parser_bar)))
+                    }
+                }
+                None => {
+                    return Err(anyhow!(std::io::Error::new(ErrorKind::InvalidInput, "missing filename")))
+                }
+            }
+        } else {
+            let parser = MftParser::from_path(&self.mft_file).unwrap();
+            let parser_bar = multi_bar.add(self.new_progress_bar("parsing $MFT entries", ProgressBarType::Count(parser.get_entry_count())));
+            thread::spawn(move|| Self::fill_preprocessed_mft(parser, Some(parser_bar)))
+        };
+
+        let usnjrnl_bar = multi_bar.add(self.new_progress_bar("parsing $UsnJrnl:$J entries", ProgressBarType::Spinner));
         let usnjrnl_path = self.usnjrnl.clone();
         let usnjrnl_thread = thread::spawn(move||
             Self::read_usnjrnl(&usnjrnl_path, usnjrnl_bar)
@@ -121,7 +171,7 @@ impl Mft2BodyfileTask {
         let usnjrnl = usnjrnl_thread.join().unwrap();
 
         if ! usnjrnl.is_empty() {
-            let bar = self.new_progress_bar("merging $UsnJrnl entries", Some(usnjrnl.len() as u64));
+            let bar = self.new_progress_bar("merging $UsnJrnl entries", ProgressBarType::Count(usnjrnl.len() as u64));
             for (reference, records) in usnjrnl.into_iter() {
                 pp.add_usnjrnl_records(reference, records);
                 bar.inc(1);
@@ -129,7 +179,7 @@ impl Mft2BodyfileTask {
             bar.finish();
         }
 
-        let bar = &self.new_progress_bar("exporting bodyfile lines", Some(pp.bodyfile_lines_count() as u64));
+        let bar = &self.new_progress_bar("exporting bodyfile lines", ProgressBarType::Count(pp.bodyfile_lines_count() as u64));
         let stdout = std::io::stdout();
         let mut stdout_lock: Box<dyn Write> = match self.output {
             BodyfileSink::Stdout     => Box::new(stdout.lock()),
@@ -145,18 +195,22 @@ impl Mft2BodyfileTask {
         Ok(())
     }
 
-    fn new_progress_bar(&self, message: &'static str, count:Option<u64>) -> ProgressBar {
-        let bar = match count {
-            Some(count) => ProgressBar::new(count).with_message(message),
-            None => ProgressBar::new_spinner().with_message(message)
+    fn new_progress_bar(&self, message: &'static str, bar_type: ProgressBarType) -> ProgressBar {
+        let bar = match bar_type {
+            ProgressBarType::Count(count) => ProgressBar::new(count).with_message(message),
+            ProgressBarType::Bytes => ProgressBar::new_spinner().with_message(message),
+            ProgressBarType::Spinner => ProgressBar::new_spinner().with_message(message)
         };
-        let style = match count {
-            Some(_count) => ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>9}/{len:9}({percent}%) {msg}")
-            .progress_chars("##-"),
-            None => ProgressStyle::default_spinner()
-            .template("[{elapsed_precise}] {spinner:40} {pos:>9} {msg}")
-            .tick_chars("|/-\\"),
+        let style = match bar_type {
+            ProgressBarType::Count(_count) => ProgressStyle::default_bar()
+                .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>9}/{len:9}({percent}%) {msg}")
+                .progress_chars("##-"),
+            ProgressBarType::Bytes => ProgressStyle::default_spinner()
+                .template("[{elapsed_precise}] {spinner:40} {bytes:>9} {msg}")
+                .tick_chars("|/-\\"),
+            ProgressBarType::Spinner => ProgressStyle::default_spinner()
+                .template("[{elapsed_precise}] {spinner:40} {pos:>9} {msg}")
+                .tick_chars("|/-\\"),
         };
         bar.set_style(style);
         bar.set_draw_delta(1000);
