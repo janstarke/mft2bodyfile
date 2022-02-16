@@ -4,3 +4,5 @@ Cargo.lock
 *.bodyfile
 *.mft
 *.dd
+*.gz
+*.tbz2
