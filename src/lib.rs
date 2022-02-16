@@ -1,11 +1,11 @@
 mod intern;
-
+use std::thread;
 use usnjrnl::*;
 pub use intern::*;
 use mft::MftParser;
 use std::path::PathBuf;
 use anyhow::Result;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
 use std::io::Write;
 use std::fs::File;
 
@@ -92,24 +92,36 @@ impl Mft2BodyfileTask {
         pp
     }
 
+    fn read_usnjrnl(usnjrnl_path: &Option<PathBuf>, bar: ProgressBar) -> UsnJrnl {
+        match usnjrnl_path {
+            Some(jrnl_path) => UsnJrnl::from(UsnJrnlReader::from(jrnl_path).unwrap(), bar),
+            None => UsnJrnl::default()
+        }
+    }
+
     pub fn run(self) -> Result<()> {
 
-        /* read $UsnJrnl in the background */
-        let usnjrnl_path = self.usnjrnl.clone();
-        let usnjrnl_thread = std::thread::spawn(|| {
-            match usnjrnl_path {
-                Some(jrnl_path) => UsnJrnl::from(UsnJrnlReader::from(&jrnl_path).unwrap()),
-                None => UsnJrnl::default()
-            }
-        });
-        
-        let parser = MftParser::from_path(&self.mft_file).unwrap();
-        let bar = self.new_progress_bar("parsing $MFT entries", parser.get_entry_count());
-        let mut pp = Self::fill_preprocessed_mft(parser, Some(bar));
+        /* not to be mixed with MultiCar ;-) */
+        let multi_bar = MultiProgress::new();
 
+        let parser = MftParser::from_path(&self.mft_file).unwrap();
+        let parser_bar = multi_bar.add(self.new_progress_bar("parsing $MFT entries", Some(parser.get_entry_count())));
+        let pp_thread = thread::spawn(move||
+            Self::fill_preprocessed_mft(parser, Some(parser_bar))
+        );
+
+        let usnjrnl_bar = multi_bar.add(self.new_progress_bar("parsing $UsnJrnl:$J entries", None));
+        let usnjrnl_path = self.usnjrnl.clone();
+        let usnjrnl_thread = thread::spawn(move||
+            Self::read_usnjrnl(&usnjrnl_path, usnjrnl_bar)
+        );
+ 
+        let _ = multi_bar.join();
+        let mut pp = pp_thread.join().unwrap();
         let usnjrnl = usnjrnl_thread.join().unwrap();
+
         if ! usnjrnl.is_empty() {
-            let bar = self.new_progress_bar("merging $UsnJrnl entries", usnjrnl.len() as u64);
+            let bar = self.new_progress_bar("merging $UsnJrnl entries", Some(usnjrnl.len() as u64));
             for (reference, records) in usnjrnl.into_iter() {
                 pp.add_usnjrnl_records(reference, records);
                 bar.inc(1);
@@ -117,7 +129,7 @@ impl Mft2BodyfileTask {
             bar.finish();
         }
 
-        let bar = &self.new_progress_bar("exporting bodyfile lines", pp.bodyfile_lines_count() as u64);
+        let bar = &self.new_progress_bar("exporting bodyfile lines", Some(pp.bodyfile_lines_count() as u64));
         let stdout = std::io::stdout();
         let mut stdout_lock: Box<dyn Write> = match self.output {
             BodyfileSink::Stdout     => Box::new(stdout.lock()),
@@ -133,11 +145,20 @@ impl Mft2BodyfileTask {
         Ok(())
     }
 
-    fn new_progress_bar(&self, message: &'static str, count:u64) -> ProgressBar {
-        let bar = ProgressBar::new(count).with_message(message);
-        bar.set_style(ProgressStyle::default_bar()
+    fn new_progress_bar(&self, message: &'static str, count:Option<u64>) -> ProgressBar {
+        let bar = match count {
+            Some(count) => ProgressBar::new(count).with_message(message),
+            None => ProgressBar::new_spinner().with_message(message)
+        };
+        let style = match count {
+            Some(_count) => ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>9}/{len:9}({percent}%) {msg}")
-            .progress_chars("##-"));
+            .progress_chars("##-"),
+            None => ProgressStyle::default_spinner()
+            .template("[{elapsed_precise}] {spinner:40} {pos:>9} {msg}")
+            .tick_chars("|/-\\"),
+        };
+        bar.set_style(style);
         bar.set_draw_delta(1000);
         bar
     }

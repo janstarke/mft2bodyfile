@@ -1,4 +1,5 @@
-use std::collections::hash_map::HashMap;
+use std::{collections::hash_map::HashMap};
+use indicatif::ProgressBar;
 use usnjrnl::*;
 use winstructs::ntfs::mft_reference::MftReference;
 
@@ -31,10 +32,8 @@ impl UsnJrnl {
     pub fn into_iter(self) -> std::collections::hash_map::IntoIter<KeyType, ValueType> {
         self.entries.into_iter()
     }
-}
 
-impl From<UsnJrnlReader> for UsnJrnl {
-    fn from(reader: UsnJrnlReader) -> Self {
+    pub fn from(reader: UsnJrnlReader, bar: ProgressBar) -> Self {
         let mut entries: HashMap<KeyType, ValueType> = HashMap::new();
         for entry in reader.into_iter() {
             match entry {
@@ -46,6 +45,7 @@ impl From<UsnJrnlReader> for UsnJrnl {
                                 Some(ref mut v) => v.push(e),
                                 None => {
                                     let _ = entries.insert(data.FileReferenceNumber, vec![e]);
+                                    bar.inc(1);
                                 }
                             };
                         }
@@ -53,6 +53,7 @@ impl From<UsnJrnlReader> for UsnJrnl {
                 }
             }
         }
+        bar.finish_at_current_pos();
 
         Self {
             entries
