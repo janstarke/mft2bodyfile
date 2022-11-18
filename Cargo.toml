@@ -1,6 +1,6 @@
 [package]
 name = "mft2bodyfile"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Jan Starke <Jan.Starke@t-systems.com>"]
 edition = "2018"
 description = "parses an $MFT file to bodyfile (stdout)"
@@ -21,25 +21,25 @@ path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mft = "0.5.3"
+mft = "0.6"
 winstructs = "0.3.0"
 anyhow = "1.0.40"
 clap = "2"
-simplelog = "0.10.0"
+simplelog = "0.12.0"
 likely_stable = "0.1.2"
 log = "0.4.14"
 num = "0.4.0"
-indicatif = "0.16.2"
+indicatif = "0.16"
 chrono = "0.4"
 flate2 = {version = "1.0.22", optional=true}
 buf_stream_reader = "0.2"
 
-usnjrnl = "0.4"
+usnjrnl = ">=0.4.4"
 
 bodyfile = "0.1"
 
 [dev-dependencies]
-more-asserts = "0.2.1"
+more-asserts = "0.3"
 
 #[profile.dev]
 #debug = true
