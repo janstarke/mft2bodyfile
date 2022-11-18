@@ -6,16 +6,9 @@ use winstructs::ntfs::mft_reference::MftReference;
 pub type KeyType = MftReference;
 pub type ValueType = Vec<CommonUsnRecord>;
 
+#[derive(Default)]
 pub struct UsnJrnl {
     entries: HashMap<KeyType, ValueType>
-}
-
-impl Default for UsnJrnl {
-    fn default() -> Self {
-        Self {
-            entries: HashMap::new()
-        }
-    }
 }
 
 impl UsnJrnl {

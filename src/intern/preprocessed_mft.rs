@@ -10,17 +10,11 @@ pub struct ParentInfo {
     pub reference: Option<MftReference>
 }
 
+#[derive(Default)]
 pub struct PreprocessedMft {
     complete_entries: HashMap<MftReference, CompleteMftEntry>
 }
 
-impl Default for PreprocessedMft {
-    fn default() -> Self {
-        Self {
-            complete_entries: HashMap::new()
-        }
-    }
-}
 
 impl PreprocessedMft {
     pub fn add_entry(&mut self, entry: MftEntry) {
@@ -88,8 +82,8 @@ impl PreprocessedMft {
             }
         }
 
-        return ParentInfo {
-            full_path: format!("/$OrphanFiles"),
+        ParentInfo {
+            full_path: "/$OrphanFiles".to_string(),
             is_allocated: false,
             reference: None
         }
@@ -102,7 +96,6 @@ impl PreprocessedMft {
     pub fn iter_entries<'a>(&'a self, usnjrnl_longflags: bool) -> Box<dyn Iterator<Item=String> + 'a>{
         Box::new(self.complete_entries
             .values()
-            .map(move |c| c.bodyfile_lines(self, usnjrnl_longflags))
-            .flatten())
+            .flat_map(move |c| c.bodyfile_lines(self, usnjrnl_longflags)))
     }
 }

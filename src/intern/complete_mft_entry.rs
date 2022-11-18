@@ -1,15 +1,15 @@
-use crate::intern::{PreprocessedMft};
+use crate::intern::PreprocessedMft;
 use crate::{FilenameInfo, TimestampTuple};
 use anyhow::Result;
+use bodyfile::Bodyfile3Line;
 use likely_stable::unlikely;
 use mft::attribute::{MftAttributeContent, MftAttributeType};
 use mft::MftEntry;
-use std::cell::RefCell;
-use winstructs::ntfs::mft_reference::MftReference;
-use usnjrnl::{CommonUsnRecord, UsnRecordData};
-use bodyfile::Bodyfile3Line;
 use num::ToPrimitive;
+use std::cell::RefCell;
 use std::cmp;
+use usnjrnl::{CommonUsnRecord, UsnRecordData};
+use winstructs::ntfs::mft_reference::MftReference;
 
 ///
 /// Represents the set of all $MFT entries that make up a files metadata.
@@ -41,13 +41,13 @@ pub struct CompleteMftEntry {
     deletion_status: RefCell<&'static str>,
     usnjrnl_records: Vec<CommonUsnRecord>,
     streams: Vec<StreamAttribute>,
-    is_directory: bool
+    is_directory: bool,
 }
 
 pub struct StreamAttribute {
     attribute_type: MftAttributeType,
     name: Option<String>,
-    instance: u16
+    instance: u16,
 }
 
 impl CompleteMftEntry {
@@ -59,9 +59,13 @@ impl CompleteMftEntry {
             full_path: RefCell::new(String::new()),
             is_allocated: entry.is_allocated(),
             usnjrnl_records: Vec::new(),
-            deletion_status: RefCell::new(if entry.is_allocated() {""} else {" (deleted)"} ),
+            deletion_status: RefCell::new(if entry.is_allocated() {
+                ""
+            } else {
+                " (deleted)"
+            }),
             streams: Vec::new(),
-            is_directory: entry.is_dir()
+            is_directory: entry.is_dir(),
         };
         c.update_attributes(&entry);
         c
@@ -77,7 +81,7 @@ impl CompleteMftEntry {
             usnjrnl_records: Vec::new(),
             deletion_status: RefCell::new(" (deleted)"),
             streams: Vec::new(),
-            is_directory: false
+            is_directory: false,
         };
         c.add_nonbase_entry(entry);
         c
@@ -85,8 +89,7 @@ impl CompleteMftEntry {
 
     pub fn from_usnjrnl_records(_entry_ref: MftReference, records: Vec<CommonUsnRecord>) -> Self {
         let mut records = records;
-        records.sort_by(
-            |a, b| a.data.timestamp().partial_cmp(b.data.timestamp()).unwrap());
+        records.sort_by(|a, b| a.data.timestamp().partial_cmp(b.data.timestamp()).unwrap());
 
         Self {
             base_entry: _entry_ref,
@@ -97,7 +100,7 @@ impl CompleteMftEntry {
             usnjrnl_records: records,
             deletion_status: RefCell::new(" (deleted)"),
             streams: Vec::new(),
-            is_directory: false
+            is_directory: false,
         }
     }
 
@@ -121,9 +124,9 @@ impl CompleteMftEntry {
         self.update_attributes(&e);
     }
 
-    pub fn add_usnjrnl_records(&mut self, records: Vec<CommonUsnRecord>) {let mut records = records;
-        records.sort_by(
-            |a, b| a.data.timestamp().partial_cmp(b.data.timestamp()).unwrap());
+    pub fn add_usnjrnl_records(&mut self, records: Vec<CommonUsnRecord>) {
+        let mut records = records;
+        records.sort_by(|a, b| a.data.timestamp().partial_cmp(b.data.timestamp()).unwrap());
 
         if self.usnjrnl_records.is_empty() {
             self.usnjrnl_records = records;
@@ -133,7 +136,6 @@ impl CompleteMftEntry {
     }
 
     fn update_attributes(&mut self, entry: &MftEntry) {
-        
         for attr_result in entry
             .iter_attributes_matching(Some(vec![
                 MftAttributeType::StandardInformation,
@@ -145,14 +147,17 @@ impl CompleteMftEntry {
         {
             //eprintln!("TYPE_CODE: {}", attr_result.header.type_code.to_u32().unwrap());
 
-            if attr_result.header.type_code == MftAttributeType::IndexRoot || attr_result.header.type_code == MftAttributeType::DATA
+            if attr_result.header.type_code == MftAttributeType::IndexRoot
+                || attr_result.header.type_code == MftAttributeType::DATA
             {
-                self.streams.push(
-                    StreamAttribute {
-                        attribute_type: attr_result.header.type_code,
-                        name: attr_result.header.name_offset.and(Some(attr_result.header.name)),
-                        instance: attr_result.header.instance
-                    });
+                self.streams.push(StreamAttribute {
+                    attribute_type: attr_result.header.type_code,
+                    name: attr_result
+                        .header
+                        .name_offset
+                        .and(Some(attr_result.header.name)),
+                    instance: attr_result.header.instance,
+                });
                 continue;
             }
 
@@ -169,10 +174,14 @@ impl CompleteMftEntry {
                 MftAttributeContent::AttrX30(file_name_attribute) => {
                     match self.file_name_attribute {
                         None => {
-                            self.file_name_attribute =
-                                Some(FilenameInfo::from(&file_name_attribute, &attr_result.header))
+                            self.file_name_attribute = Some(FilenameInfo::from(
+                                &file_name_attribute,
+                                &attr_result.header,
+                            ))
                         }
-                        Some(ref mut name_attr) => name_attr.update(&file_name_attribute, &attr_result.header),
+                        Some(ref mut name_attr) => {
+                            name_attr.update(&file_name_attribute, &attr_result.header)
+                        }
                     }
                 }
                 _ => panic!("filter for iter_attributes_matching() isn't working"),
@@ -194,7 +203,7 @@ impl CompleteMftEntry {
         let parent_info = mft.get_full_path(parent);
 
         *fp = parent_info.full_path;
-        if ! &fp.ends_with('/') {
+        if !&fp.ends_with('/') {
             fp.push('/');
         }
         fp.push_str(my_name);
@@ -210,24 +219,22 @@ impl CompleteMftEntry {
             }
 
             match self.filename_info() {
-                Some(name) => {
-                    match self.parent() {
-                        None => *self.full_path.borrow_mut() = name.filename().clone(),
-                        Some(p) => self.set_folder_name(mft, p, name.filename())
-                    }
-                }
+                Some(name) => match self.parent() {
+                    None => *self.full_path.borrow_mut() = name.filename().clone(),
+                    Some(p) => self.set_folder_name(mft, p, name.filename()),
+                },
                 None => {
                     let my_name = match self.filename_from_usnjrnl() {
                         Some(name) => name.to_owned(),
                         None => format!(
                             "unnamed_{}_{}",
                             self.base_entry.entry, self.base_entry.sequence
-                        )
+                        ),
                     };
 
                     match self.parent_from_usnjrnl() {
                         None => *self.full_path.borrow_mut() = my_name,
-                        Some(p) => self.set_folder_name(mft, &p, &my_name)
+                        Some(p) => self.set_folder_name(mft, &p, &my_name),
                     };
                 }
             }
@@ -238,14 +245,13 @@ impl CompleteMftEntry {
     fn filename_from_usnjrnl(&self) -> Option<&str> {
         self.usnjrnl_records.last().map(|r| r.data.filename())
     }
-    
+
     fn parent_from_usnjrnl(&self) -> Option<MftReference> {
         self.usnjrnl_records.last().and_then(|r| match &r.data {
-                UsnRecordData::V2(data) => Some(data.ParentFileReferenceNumber),
-                #[allow(unreachable_patterns)]
-                _ => None
-            }
-        )
+            UsnRecordData::V2(data) => Some(data.ParentFileReferenceNumber),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        })
     }
 
     pub fn filesize(&self) -> u64 {
@@ -260,16 +266,16 @@ impl CompleteMftEntry {
         display_name: String,
         timestamps: &TimestampTuple,
         attribute_id: u32,
-        instance_id: u16
+        instance_id: u16,
     ) -> String {
         Bodyfile3Line::new()
-            .with_owned_name(format!("{}{}",
-                display_name,
-                self.deletion_status.borrow()))
-            .with_owned_inode(format!("{}-{}-{}",
-                self.base_entry().entry.to_string(),
+            .with_owned_name(format!("{}{}", display_name, self.deletion_status.borrow()))
+            .with_owned_inode(format!(
+                "{}-{}-{}",
+                self.base_entry().entry,
                 attribute_id,
-                instance_id))
+                instance_id
+            ))
             .with_size(self.filesize())
             .with_atime(timestamps.accessed())
             .with_mtime(timestamps.mft_modified())
@@ -279,52 +285,54 @@ impl CompleteMftEntry {
     }
 
     fn format_fn(&self, mft: &PreprocessedMft) -> Option<String> {
-        self.file_name_attribute.as_ref().and_then(|fn_attr|
-            Some(self.format(
-                    format!("{} ($FILE_NAME)", self.get_full_path(mft)),
-                    fn_attr.timestamps(),
-                    MftAttributeType::FileName.to_u32().unwrap(),
-                    fn_attr.instance_id()
-            )
-        ))
+        self.file_name_attribute.as_ref().map(|fn_attr| self.format(
+                format!("{} ($FILE_NAME)", self.get_full_path(mft)),
+                fn_attr.timestamps(),
+                MftAttributeType::FileName.to_u32().unwrap(),
+                fn_attr.instance_id(),
+            ))
     }
 
-    fn format_si(&self, mft: &PreprocessedMft, 
+    fn format_si(
+        &self,
+        mft: &PreprocessedMft,
         stream_name: Option<&String>,
         attribute_id: u32,
-        instance_id: u16) -> Option<String> {
-        self.standard_info_timestamps.as_ref().and_then(|si| {
+        instance_id: u16,
+    ) -> Option<String> {
+        self.standard_info_timestamps.as_ref().map(|si| {
             let name = match stream_name {
-                None    =>                  self.get_full_path(mft),
-                Some(n) => format!("{}:{}", self.get_full_path(mft), n)
+                None => self.get_full_path(mft),
+                Some(n) => format!("{}:{}", self.get_full_path(mft), n),
             };
-            Some(self.format(
-                    name,
-                    si,
-                    attribute_id,
-                    instance_id
-            )
-        )})
+            self.format(name, si, attribute_id, instance_id)
+        })
     }
-
 
     /// returns the filename stored in the `$MFT`, if any, or None
     fn mft_filename(&self) -> Option<&String> {
         match &self.file_name_attribute {
             Some(fni) => Some(fni.filename()),
-            None => None
+            None => None,
         }
     }
 
-    fn format_usnjrnl(&self, mft: &PreprocessedMft, record: &CommonUsnRecord, usnjrnl_longflags: bool) -> String {
+    fn format_usnjrnl(
+        &self,
+        mft: &PreprocessedMft,
+        record: &CommonUsnRecord,
+        usnjrnl_longflags: bool,
+    ) -> String {
         match &record.data {
             UsnRecordData::V2(data) => {
                 let filename_info = match self.mft_filename() {
                     None => format!(" filename={}", data.FileName),
-                    Some(f) => if f != &data.FileName {
-                        format!(" filename={}", data.FileName)
-                    } else {
-                        "".to_owned()
+                    Some(f) => {
+                        if f != &data.FileName {
+                            format!(" filename={}", data.FileName)
+                        } else {
+                            "".to_owned()
+                        }
                     }
                 };
 
@@ -337,30 +345,36 @@ impl CompleteMftEntry {
                 let parent_info = mft.get_full_path(&data.ParentFileReferenceNumber);
                 let parent_info = match &parent_info.reference {
                     Some(parent_ref) => {
-                        if parent_ref == &data.ParentFileReferenceNumber {
-                            "".to_owned()
-                        } else if !parent_info.is_allocated &&
-                            parent_ref == &MftReference::new(
-                                data.ParentFileReferenceNumber.entry,
-                                data.ParentFileReferenceNumber.sequence+1) {
+                        if parent_ref == &data.ParentFileReferenceNumber
+                            || !parent_info.is_allocated
+                                && parent_ref
+                                    == &MftReference::new(
+                                        data.ParentFileReferenceNumber.entry,
+                                        data.ParentFileReferenceNumber.sequence + 1,
+                                    )
+                        {
                             "".to_owned()
                         } else {
-                            format!(" parent={}-{}/{}-{}/'{}'",
+                            format!(
+                                " parent={}-{}/{}-{}/'{}'",
                                 parent_ref.entry,
                                 parent_ref.sequence,
                                 data.ParentFileReferenceNumber.entry,
                                 data.ParentFileReferenceNumber.sequence,
-                                parent_info.full_path)
+                                parent_info.full_path
+                            )
                         }
                     }
-                    None => format!(" parent='{}'", parent_info.full_path)
+                    None => format!(" parent='{}'", parent_info.full_path),
                 };
 
-                let display_name = format!("{} ($UsnJrnl{}{}{})",
-                        self.get_full_path(mft),
-                        filename_info,
-                        parent_info,
-                        reason_info);
+                let display_name = format!(
+                    "{} ($UsnJrnl{}{}{})",
+                    self.get_full_path(mft),
+                    filename_info,
+                    parent_info,
+                    reason_info
+                );
                 let timestamp = data.TimeStamp.timestamp();
                 Bodyfile3Line::new()
                     .with_owned_name(display_name)
@@ -398,13 +412,18 @@ impl CompleteMftEntry {
     pub fn bodyfile_lines(&self, mft: &PreprocessedMft, usnjrnl_longflags: bool) -> BodyfileLines {
         let mut lines: Vec<String> = Vec::new();
         for d in self.streams.iter() {
-
             // hide default directory index name
-            let name = if d.attribute_type == MftAttributeType::IndexRoot && d.name == Some("$I30".to_owned()) {
+            let name = if d.attribute_type == MftAttributeType::IndexRoot
+                && d.name == Some("$I30".to_owned())
+            {
                 None
-            } else { d.name.as_ref() };
+            } else {
+                d.name.as_ref()
+            };
 
-            if let Some(line) = self.format_si(mft, name, d.attribute_type.to_u32().unwrap(), d.instance) {
+            if let Some(line) =
+                self.format_si(mft, name, d.attribute_type.to_u32().unwrap(), d.instance)
+            {
                 lines.push(line);
             }
         }
@@ -415,36 +434,32 @@ impl CompleteMftEntry {
             }
         }
 
-        BodyfileLines {        
-
+        BodyfileLines {
             standard_info: lines,
             filename_info: self.format_fn(mft),
-            usnjrnl_records: self.usnjrnl_records
-                                    .iter()
-                                    .map(|r| self.format_usnjrnl(mft, r, usnjrnl_longflags))
-                                    .collect()
+            usnjrnl_records: self
+                .usnjrnl_records
+                .iter()
+                .map(|r| self.format_usnjrnl(mft, r, usnjrnl_longflags))
+                .collect(),
         }
     }
 
     pub fn bodyfile_lines_count(&self) -> usize {
         (match &self.standard_info_timestamps {
             Some(_) => cmp::min(self.streams.len(), 1),
-            None    => 0,
-        }
-        +
-        match &self.file_name_attribute {
+            None => 0,
+        } + match &self.file_name_attribute {
             Some(_) => 1,
-            None    => 0,
-        }
-        +
-        self.usnjrnl_records.len())
+            None => 0,
+        } + self.usnjrnl_records.len())
     }
 }
 
 pub struct BodyfileLines {
     standard_info: Vec<String>,
     filename_info: Option<String>,
-    usnjrnl_records: Vec<String>
+    usnjrnl_records: Vec<String>,
 }
 
 impl Iterator for BodyfileLines {

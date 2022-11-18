@@ -81,7 +81,7 @@ impl Mft2BodyfileApplication {
         if let Some(usnjrnl_filename) = matches.value_of("journal") {
             let fp = PathBuf::from(&usnjrnl_filename);
             if ! (fp.exists() && fp.is_file()) {
-                return Err(anyhow::Error::msg(format!("File {} does not exist", &filename)));
+                return Err(anyhow::Error::msg(format!("File {} does not exist", &usnjrnl_filename)));
             } else {
                 self.usnjrnl = Some(fp);
             }
