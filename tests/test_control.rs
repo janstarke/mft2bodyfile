@@ -28,7 +28,7 @@ fn get_parsed_mft() -> PreprocessedMft {
 fn test_root_entry() {
     let root_entries: Vec<Bodyfile3Line> = get_parsed_mft()
                         .iter_entries(false)
-                        .map(|l| Bodyfile3Line::try_from(l.as_ref()).expect(l.as_ref()))
+                        .map(|l| Bodyfile3Line::try_from(l.as_ref()).unwrap_or_else(|_| { panic!("{}", l) }))
                         .filter(|l| l.get_inode().starts_with("5-"))
                         .collect();
 
@@ -39,7 +39,7 @@ fn test_root_entry() {
         if e.get_name().len() == 1 {
             assert_eq!(e.get_name(), "/");
         } else {
-            assert_eq!(e.get_name().starts_with("/ "), true);
+            assert!(e.get_name().starts_with("/ "));
         }
     }
 }
@@ -64,7 +64,7 @@ fn test_deleted_entries() {
 
     let mut deleted_entries: HashSet<String> = get_parsed_mft()
                         .iter_entries(false)
-                        .map(|l| Bodyfile3Line::try_from(l.as_ref()).expect(l.as_ref()))
+                        .map(|l| Bodyfile3Line::try_from(l.as_ref()).unwrap_or_else(|_| { panic!("{}", l) }))
                         .filter(|l| l.get_name().contains("deleted"))
                         .map(|l| l.get_name().to_owned())
                         .collect();
