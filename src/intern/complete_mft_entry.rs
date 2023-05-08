@@ -285,12 +285,14 @@ impl CompleteMftEntry {
     }
 
     fn format_fn(&self, mft: &PreprocessedMft) -> Option<String> {
-        self.file_name_attribute.as_ref().map(|fn_attr| self.format(
+        self.file_name_attribute.as_ref().map(|fn_attr| {
+            self.format(
                 format!("{} ($FILE_NAME)", self.get_full_path(mft)),
                 fn_attr.timestamps(),
                 MftAttributeType::FileName.to_u32().unwrap(),
                 fn_attr.instance_id(),
-            ))
+            )
+        })
     }
 
     fn format_si(
@@ -379,11 +381,17 @@ impl CompleteMftEntry {
                 Bodyfile3Line::new()
                     .with_owned_name(display_name)
                     .with_atime(timestamp)
+                    .with_owned_inode(format!(
+                        "{mft_entry}-{attr_type}-{usn_number}",
+                        mft_entry = data.FileReferenceNumber.entry,
+                        attr_type = "???",
+                        usn_number = data.FileReferenceNumber.sequence
+                    ))
                     .to_string()
             }
         }
     }
-
+ 
     pub fn filename_info(&self) -> &Option<FilenameInfo> {
         if self.file_name_attribute.is_none() && self.is_allocated {
             #[cfg(debug_assertions)]
@@ -444,7 +452,7 @@ impl CompleteMftEntry {
                 .collect(),
         }
     }
-
+ 
     pub fn bodyfile_lines_count(&self) -> usize {
         (match &self.standard_info_timestamps {
             Some(_) => cmp::min(self.streams.len(), 1),

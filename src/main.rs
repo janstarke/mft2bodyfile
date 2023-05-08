@@ -89,7 +89,7 @@ impl Mft2BodyfileApplication {
 
         if let Some(output) = matches.value_of("output") {
             if output != "-" {
-                self.output = BodyfileSink::File(File::create(&output)?);
+                self.output = BodyfileSink::File(File::create(output)?);
             }
         }
 
